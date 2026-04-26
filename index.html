@@ -106,22 +106,12 @@
             return new Date(dStr);
         };
 
-        const formatLabelMultiLine = (text) => {
-            if (!text) return [""];
+        // Formatação de labels em linha única para evitar sobreposição nos gráficos inclinados
+        const formatLabelSingleLine = (text) => {
+            if (!text) return "";
             let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
-            if (cleanText.length <= 15) return [cleanText];
-            const words = cleanText.split(' ');
-            let lines = [];
-            let currentLine = '';
-            words.forEach(word => {
-                if ((currentLine + word).length > 18) {
-                    if (currentLine) lines.push(currentLine.trim());
-                    currentLine = word + ' ';
-                } else currentLine += word + ' ';
-            });
-            if (currentLine) lines.push(currentLine.trim());
-            if (lines.length > 2) return [lines[0], lines[1].substring(0, 15) + '...'];
-            return lines;
+            if (cleanText.length > 25) return cleanText.substring(0, 25) + '...';
+            return cleanText;
         };
 
         const startResize = (e) => {
@@ -249,28 +239,27 @@
             return <canvas id={id}></canvas>;
         };
 
-        // NOVO: Gráfico de Funil para o Volume Financeiro
+        // Gráfico de Funil Horizontal Alinhado ao Centro
         function FunnelChart({ data }) {
             const max = data.length > 0 && data[0].value > 0 ? data[0].value : 1;
             return (
-                <div className="w-full h-full flex flex-col justify-around gap-1 mt-2">
+                <div className="w-full h-full flex flex-col-reverse items-center justify-center gap-2 sm:gap-3 py-2">
                     {data.map((item, i) => {
                         const pct = data[0].value > 0 ? (item.value / max) * 100 : 0;
-                        const w = Math.max(pct, 15);
+                        const w = Math.max(pct, 15); // Largura mínima de 15% para o texto caber
                         return (
-                            <div key={i} className="w-full flex-1 flex flex-col justify-center">
-                                <div className="flex justify-between px-1 mb-1">
-                                    <span className="text-[9px] font-black text-slate-500 uppercase">{item.label}</span>
-                                    <span className="text-[9px] font-bold text-slate-500">{formatBRL(item.value)}</span>
-                                </div>
-                                <div className="w-full h-5 sm:h-6 flex justify-center">
-                                    <div 
-                                        className={`${item.color} h-full rounded flex items-center justify-center shadow-sm cursor-pointer transition-all duration-500`}
-                                        style={{ width: `${w}%` }}
-                                        title={`${item.label}: ${formatBRL(item.value)}`}
-                                    >
-                                        <span className="text-white font-black text-[10px] drop-shadow-md">{pct.toFixed(1)}%</span>
-                                    </div>
+                            <div key={i} className="w-full flex flex-col items-center justify-center flex-1">
+                                <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase mb-1">
+                                    {item.label}
+                                </span>
+                                <div 
+                                    className={`${item.color} rounded shadow-sm transition-all duration-500 flex items-center justify-center relative hover:opacity-80 cursor-help`}
+                                    style={{ width: `${w}%`, minHeight: '28px' }}
+                                    title={`${item.label}: ${formatBRL(item.value)}`}
+                                >
+                                    <span className="text-white font-black text-[10px] sm:text-[11px] drop-shadow-md px-2 text-center whitespace-nowrap">
+                                        {shortenNumber(item.value)} ({pct.toFixed(1).replace('.', ',')}%)
+                                    </span>
                                 </div>
                             </div>
                         );
@@ -324,6 +313,7 @@
             const [searchContrato, setSearchContrato] = useState(""); 
             const [searchUgNome, setSearchUgNome] = useState(""); 
             const [searchEmpenho, setSearchEmpenho] = useState("");
+            const [searchDocumento, setSearchDocumento] = useState("");
             const [searchObs, setSearchObs] = useState("");
             const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''} });
 
@@ -336,6 +326,7 @@
                     const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
                     const matchUgNome = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
                     const matchEmpenho = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
+                    const matchDocumento = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
                     const matchObs = !searchObs || item.obs.includes(searchObs.toUpperCase());
 
                     let matchNum = true;
@@ -343,7 +334,7 @@
                         if (numFilters[metricField].min !== '' && item[metricField] < parseFloat(numFilters[metricField].min)) matchNum = false;
                         if (numFilters[metricField].max !== '' && item[metricField] > parseFloat(numFilters[metricField].max)) matchNum = false;
                     }
-                    return matchContrato && matchUgNome && matchEmpenho && matchObs && matchNum;
+                    return matchContrato && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum;
                 });
 
                 if (sortConfig.key) {
@@ -356,14 +347,15 @@
                     });
                 }
                 return filtered;
-            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchObs, numFilters, sortConfig]);
+            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
             
-            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchObs, numFilters, sortConfig]);
+            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
 
             const exportColumns = [
                 { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
                 { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
-                { header: "EMPENHO", key: "empenho" }, { header: "OBS", key: "obs" },
+                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
+                { header: "OBS", key: "obs" },
                 { header: metricLabel, key: metricField, isCurrency: true }
             ];
 
@@ -381,11 +373,12 @@
                         <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
                             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                 <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                    <TextHeader widthClass="w-[10%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
-                                    <TextHeader widthClass="w-[12%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
-                                    <TextHeader widthClass="w-[8%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
-                                    <TextHeader widthClass="w-[20%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
-                                    <TextHeader widthClass="w-[12%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                    <TextHeader widthClass="w-[8%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[10%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
+                                    <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[18%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                    <TextHeader widthClass="w-[10%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                    <TextHeader widthClass="w-[10%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
                                     <TextHeader widthClass="w-[22%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
                                     <NumericHeader widthClass="w-[16%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
                                 </tr>
@@ -398,6 +391,7 @@
                                         <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
                                         <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
                                         <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
                                         <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
                                         <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
                                             {formatBRL(row[metricField])}
@@ -734,7 +728,7 @@
                 };
             }, [filteredData]);
 
-            const funnelData = [
+            const volumeData = [
                 { label: 'EMPENHADO', value: kpis.totalEmpenhado, color: 'bg-blue-500' },
                 { label: 'RECEBIDO', value: kpis.totalRecebido, color: 'bg-violet-500' },
                 { label: 'LIQUIDADO', value: kpis.totalLiquidado, color: 'bg-amber-500' },
@@ -757,18 +751,18 @@
                     datalabels: {
                         display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
                         color: '#ffffff',
+                        rotation: -90,
                         font: { weight: 'bold', size: 9 },
                         formatter: (value) => shortenNumber(value),
-                        anchor: 'end',
-                        align: 'start',
-                        offset: 4,
+                        anchor: 'center',
+                        align: 'center',
                         textStrokeColor: 'rgba(0,0,0,0.5)',
                         textStrokeWidth: 2
                     }
                 },
                 scales: { 
                     x: { 
-                        ticks: { font: { size: 9 }, maxRotation: -90, minRotation: -90 } 
+                        ticks: { font: { size: 9 }, maxRotation: 45, minRotation: 45 } 
                     }, 
                     y: { ticks: { callback: v => shortenNumber(v) } } 
                 }
@@ -790,7 +784,7 @@
                         textStrokeColor: 'rgba(0,0,0,0.6)',
                         textStrokeWidth: 2
                     },
-                    legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } }
+                    legend: { display: false }
                 }
             };
 
@@ -893,9 +887,9 @@
                                         }]
                                     }} options={doughnutOptionsDocs} />
                                 </div>
-                                <div className="h-[200px]">
+                                <div className="h-[280px] pt-4">
                                     <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">VOLUME FINANCEIRO TOTAL (R$)</h4>
-                                    <FunnelChart data={funnelData} />
+                                    <FunnelChart data={volumeData} />
                                 </div>
                             </div>
                         </div>
@@ -918,7 +912,7 @@
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por CONTRATO (Top 20)</h3>
                             <div className="h-[400px]">
                                 <ChartComponent id="chartContratoPrincipal" type="bar" data={{
-                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    labels: dataByContrato.map(d => formatLabelSingleLine(d.label)),
                                     datasets: [
                                         { label: '01_TOTAL_EMPENHADO', data: dataByContrato.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
                                         { label: '02_TOTAL_RECEBIDO', data: dataByContrato.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
@@ -933,7 +927,7 @@
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por FAVORECIDO (Top 20)</h3>
                             <div className="h-[400px]">
                                 <ChartComponent id="chartFavorecidoPrincipal" type="bar" data={{
-                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    labels: dataByFavorecido.map(d => formatLabelSingleLine(d.label)),
                                     datasets: [
                                         { label: '01_TOTAL_EMPENHADO', data: dataByFavorecido.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
                                         { label: '02_TOTAL_RECEBIDO', data: dataByFavorecido.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
@@ -951,7 +945,7 @@
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por CONTRATO</h3>
                             <div className="h-[350px]">
                                 <ChartComponent id="chartContratoSec" type="bar" data={{
-                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    labels: dataByContrato.map(d => formatLabelSingleLine(d.label)),
                                     datasets: [
                                         { label: '05_TOTAL_CANCELADO', data: dataByContrato.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
                                         { label: '06_TOTAL_BLOQUEADO', data: dataByContrato.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
@@ -964,7 +958,7 @@
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por FAVORECIDO</h3>
                             <div className="h-[350px]">
                                 <ChartComponent id="chartFavorecidoSec" type="bar" data={{
-                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    labels: dataByFavorecido.map(d => formatLabelSingleLine(d.label)),
                                     datasets: [
                                         { label: '05_TOTAL_CANCELADO', data: dataByFavorecido.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
                                         { label: '06_TOTAL_BLOQUEADO', data: dataByFavorecido.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
