@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Documentos Contábeis</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <!-- PapaParse e Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Plugin ChartDataLabels para valores em cima das barras -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <!-- Bibliotecas de Exportação Avançada -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { height: 8px; width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // Registar o plugin de datalabels no Chart.js
+        Chart.register(ChartDataLabels);
+
+        // =========================================================
+        // MOTOR DE DESOFUSCAÇÃO HÍBRIDO (ANTI-CRASH)
+        // =========================================================
+        const _decode = (str) => {
+            if (!str) return "";
+            if (/^[01\s]+$/.test(str.trim())) {
+                try {
+                    let binArr = str.includes(' ') ? str.trim().split(' ') : str.match(/.{1,8}/g);
+                    return binArr.map(b => String.fromCharCode(parseInt(b, 2))).join('');
+                } catch(e) { return str; }
+            }
+            return str; 
+        };
+
+        // =========================================================
+        // CONFIGURAÇÕES DA API
+        // =========================================================
+        const SPREADSHEET_ID = "1rRup03vk20FWxhbkClXBLVZ2X1N8AZpFyjevbkzP4-w"; 
+        const API_KEY = _decode("SUA_API_KEY_AQUI");
+        const RANGE = "CONTROLE_EXEC_CONTR_DOC!A:K"; 
+        const API_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${RANGE}?key=${API_KEY}`;
+
+        // =========================================================
+        // NORMALIZADORES ROBUSTOS E FORMATAÇÃO
+        // =========================================================
+        const normalizeStr = (str) => {
+            if (!str) return "";
+            return str.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+        };
+
+        const parseValue = (val) => {
+            if (val === null || val === undefined || val === "") return 0;
+            if (typeof val === 'number') return val;
+            let str = String(val).replace(/[R$\s\u00A0\u202F]/g, '').trim();
+            let isNegative = false;
+            if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+            else if (str.startsWith('-')) { isNegative = true; str = str.slice(1); }
+
+            if (str.includes(',')) { str = str.replace(/\./g, '').replace(',', '.'); } 
+            else {
+                const dotCount = (str.match(/\./g) || []).length;
+                if (dotCount > 1) str = str.replace(/\./g, '');
+                else if (dotCount === 1) {
+                    const parts = str.split('.');
+                    if (parts[1].length === 3) str = str.replace('.', ''); 
+                }
+            }
+            let num = parseFloat(str);
+            if (isNaN(num)) return 0;
+            return isNegative ? -num : num;
+        };
+
+        const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(v || 0);
+        const formatPercentBR = (v) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
+
+        const shortenNumber = (num) => {
+            if (!num) return "0";
+            if (num >= 1e9) return (num / 1e9).toFixed(1).replace('.', ',') + ' Bi';
+            if (num >= 1e6) return (num / 1e6).toFixed(1).replace('.', ',') + ' Mi';
+            if (num >= 1e3) return (num / 1e3).toFixed(1).replace('.', ',') + ' Mil';
+            return num.toString();
+        };
+
+        const parseDateBR = (dStr) => {
+            if (!dStr || dStr === "-") return null;
+            if (dStr.includes('-')) return new Date(dStr + "T00:00:00");
+            const parts = dStr.split('/');
+            if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
+            return new Date(dStr);
+        };
+
+        const formatLabelMultiLine = (text) => {
+            if (!text) return [""];
+            let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
+            if (cleanText.length <= 15) return [cleanText];
+            const words = cleanText.split(' ');
+            let lines = [];
+            let currentLine = '';
+            words.forEach(word => {
+                if ((currentLine + word).length > 18) {
+                    if (currentLine) lines.push(currentLine.trim());
+                    currentLine = word + ' ';
+                } else currentLine += word + ' ';
+            });
+            if (currentLine) lines.push(currentLine.trim());
+            if (lines.length > 2) return [lines[0], lines[1].substring(0, 15) + '...'];
+            return lines;
+        };
+
+        const startResize = (e) => {
+            const th = e.target.closest('th');
+            if (!th) return;
+            const startX = e.pageX;
+            const startWidth = th.getBoundingClientRect().width;
+            
+            const onMouseMove = (moveEvent) => {
+                const newWidth = Math.max(40, startWidth + moveEvent.pageX - startX);
+                th.style.width = `${newWidth}px`;
+            };
+            
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+
+        // =========================================================
+        // MOTOR DE EXPORTAÇÃO GLOBAL (EXCEL, CSV E PDF)
+        // =========================================================
+        const exportTable = {
+            toExcel: (data, filename, columns) => {
+                const wsData = data.map(row => {
+                    let obj = {};
+                    columns.forEach(c => { obj[c.header] = row[c.key]; });
+                    return obj;
+                });
+                const ws = XLSX.utils.json_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Dados");
+                XLSX.writeFile(wb, `${filename}.xlsx`);
+            },
+            toCSV: (data, filename, columns) => {
+                let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+                csvContent += columns.map(c => c.header).join(";") + "\n";
+                data.forEach(row => {
+                    let r = columns.map(c => {
+                        let val = row[c.key];
+                        if (typeof val === 'number') return val.toString().replace('.', ',');
+                        return `"${(val || '').toString().replace(/"/g, '""')}"`;
+                    });
+                    csvContent += r.join(";") + "\n";
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `${filename}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            },
+            toPDF: (data, filename, columns, title) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('l', 'pt', 'a4'); // Landscape layout
+                doc.setFontSize(14);
+                doc.text(title, 40, 30);
+                
+                const tableHead = [columns.map(c => c.header)];
+                const tableBody = data.map(row => {
+                    return columns.map(c => {
+                        let val = row[c.key];
+                        if (c.isCurrency) return formatBRL(val);
+                        return val || "-";
+                    });
+                });
+
+                doc.autoTable({
+                    head: tableHead,
+                    body: tableBody,
+                    startY: 40,
+                    styles: { fontSize: 7, cellPadding: 3, overflow: 'linebreak' },
+                    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] }
+                });
+                doc.save(`${filename}.pdf`);
+            }
+        };
+
+        // =========================================================
+        // COMPONENTES REUTILIZÁVEIS DA UI
+        // =========================================================
+        function AutoFitText({ text, className }) {
+            const containerRef = useRef(null);
+            const textRef = useRef(null);
+
+            useEffect(() => {
+                const resize = () => {
+                    if (containerRef.current && textRef.current) {
+                        textRef.current.style.transform = 'none'; 
+                        const containerWidth = containerRef.current.clientWidth;
+                        const textWidth = textRef.current.scrollWidth;
+                        
+                        if (textWidth > containerWidth && containerWidth > 0) {
+                            const scale = containerWidth / textWidth;
+                            textRef.current.style.transform = `scale(${scale})`;
+                        }
+                    }
+                };
+                resize();
+                setTimeout(resize, 50); 
+                window.addEventListener('resize', resize);
+                return () => window.removeEventListener('resize', resize);
+            }, [text]);
+
+            return (
+                <div ref={containerRef} className="w-full overflow-hidden flex items-center">
+                    <div ref={textRef} className={`${className} origin-left whitespace-nowrap inline-block`}>
+                        {text}
+                    </div>
+                </div>
+            );
+        }
+
+        const ChartComponent = ({ type, data, options, id }) => {
+            const chartInstance = useRef(null);
+            useEffect(() => {
+                if (chartInstance.current) chartInstance.current.destroy();
+                const ctx = document.getElementById(id).getContext('2d');
+                chartInstance.current = new Chart(ctx, { type, data, options });
+                return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+            }, [data, options]);
+            return <canvas id={id}></canvas>;
+        };
+
+        // =========================================================
+        // SUB-TABELAS COM EXPORTAÇÃO
+        // =========================================================
+        function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor }) {
+            const [limit, setLimit] = useState(100);
+            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
+            
+            const [searchContrato, setSearchContrato] = useState(""); 
+            const [searchUgNome, setSearchUgNome] = useState(""); 
+            const [searchEmpenho, setSearchEmpenho] = useState("");
+            const [searchObs, setSearchObs] = useState("");
+            const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''} });
+
+            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+
+            const tableData = useMemo(() => {
+                let filtered = data.filter(row => row[metricField] !== 0);
+
+                filtered = filtered.filter(item => {
+                    const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
+                    const matchUgNome = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
+                    const matchEmpenho = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
+                    const matchObs = !searchObs || item.obs.includes(searchObs.toUpperCase());
+
+                    let matchNum = true;
+                    if (numFilters[metricField]) {
+                        if (numFilters[metricField].min !== '' && item[metricField] < parseFloat(numFilters[metricField].min)) matchNum = false;
+                        if (numFilters[metricField].max !== '' && item[metricField] > parseFloat(numFilters[metricField].max)) matchNum = false;
+                    }
+                    return matchContrato && matchUgNome && matchEmpenho && matchObs && matchNum;
+                });
+
+                if (sortConfig.key) {
+                    filtered.sort((a, b) => {
+                        let valA = a[sortConfig.key];
+                        let valB = b[sortConfig.key];
+                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return filtered;
+            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchObs, numFilters, sortConfig]);
+            
+            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchObs, numFilters, sortConfig]);
+
+            const exportColumns = [
+                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
+                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMPENHO", key: "empenho" }, { header: "OBS", key: "obs" },
+                { header: metricLabel, key: metricField, isCurrency: true }
+            ];
+
+            return (
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col h-[500px]">
+                    <div className={`${headerColor} px-4 py-3 flex justify-between items-center flex-wrap gap-2`}>
+                        <h3 className="text-white text-xs font-black tracking-widest uppercase">{title} ({tableData.length})</h3>
+                        <div className="flex gap-2">
+                            <button onClick={() => exportTable.toExcel(tableData, title, exportColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                            <button onClick={() => exportTable.toCSV(tableData, title, exportColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                            <button onClick={() => exportTable.toPDF(tableData, title, exportColumns, title.toUpperCase())} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto overflow-y-auto flex-1">
+                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
+                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
+                                    <TextHeader widthClass="w-[10%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[12%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
+                                    <TextHeader widthClass="w-[8%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[20%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                    <TextHeader widthClass="w-[12%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                    <TextHeader widthClass="w-[22%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
+                                    <NumericHeader widthClass="w-[16%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {tableData.slice(0, limit).map((row, i) => (
+                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
+                                        <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
+                                        <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
+                                        <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
+                                        <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
+                                            {formatBRL(row[metricField])}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {limit < tableData.length && (
+                        <div className="p-2 bg-slate-50 border-t flex justify-center">
+                            <button 
+                                onClick={() => setLimit(prev => prev + 100)}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] px-4 py-1 rounded transition"
+                            >
+                                Ver mais (+100)
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // =========================================================
+        // DASHBOARD MASTER (ESTRUTURA DE DADOS E GRAFICOS)
+        // =========================================================
+        function Dashboard() {
+            const [rawData, setRawData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [status, setStatus] = useState("A processar conexão...");
+            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
+            
+            const [fUg, setFUg] = useState([]);
+            const [fFavorecido, setFFavorecido] = useState([]);
+            const [fEmpenho, setFEmpenho] = useState([]);
+            const [fDocumento, setFDocumento] = useState([]);
+            const [fContrato, setFContrato] = useState([]);
+            const [dDiaDe, setDDiaDe] = useState("");
+            const [dDiaAte, setDDiaAte] = useState("");
+
+            const [searchContratoTabela, setSearchContratoTabela] = useState("");
+            const [searchUgNome, setSearchUgNome] = useState(""); 
+            const [searchEmpenho, setSearchEmpenho] = useState("");
+            const [searchDocumento, setSearchDocumento] = useState("");
+            const [searchObs, setSearchObs] = useState("");
+
+            // Estados Especiais
+            const [fOnlyBloqueado, setFOnlyBloqueado] = useState(false);
+            const [fOnlyCancelado, setFOnlyCancelado] = useState(false);
+
+            const [visibleRows, setVisibleRows] = useState(100);
+
+            const initialNumFilters = {
+                v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
+                v_liquidado: {min:'', max:''}, v_pago: {min:'', max:''},
+                v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''}
+            };
+            const [numFilters, setNumFilters] = useState(initialNumFilters);
+
+            useEffect(() => { setVisibleRows(100); }, [fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
+
+            const clearAllFilters = () => {
+                setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
+                setDDiaDe(""); setDDiaAte("");
+                setSearchContratoTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs("");
+                setNumFilters(initialNumFilters);
+                setFOnlyBloqueado(false);
+                setFOnlyCancelado(false);
+            };
+
+            const applyFilterAcessoHoje = () => {
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                setDDiaDe(`${yyyy}-${mm}-${dd}`);
+                setDDiaAte(""); 
+            };
+
+            const processData = (rowsArray) => {
+                if (!rowsArray || rowsArray.length < 2) {
+                    setStatus("Planilha vazia ou sem dados válidos.");
+                    setLoading(false);
+                    return;
+                }
+
+                setStatus("A estruturar matriz de dados...");
+                const headers = rowsArray[0];
+                const hMap = {};
+                headers.forEach((h, i) => { if(h) hMap[normalizeStr(h)] = i; });
+
+                const getVal = (exactNames, fallbackKeywords, row) => {
+                    for (let name of exactNames) {
+                        let n = normalizeStr(name);
+                        if (hMap[n] !== undefined) {
+                            let v = row[hMap[n]];
+                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
+                        }
+                    }
+                    for (let kw of fallbackKeywords) {
+                        let nKw = normalizeStr(kw);
+                        let foundKey = Object.keys(hMap).find(k => k.includes(nKw));
+                        if (foundKey) {
+                            let v = row[hMap[foundKey]];
+                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
+                        }
+                    }
+                    return "";
+                };
+
+                const grouped = {};
+
+                for (let i = 1; i < rowsArray.length; i++) {
+                    const row = rowsArray[i];
+                    if (!row || row.length === 0) continue;
+                    
+                    const dia = getVal(["Emissão - Dia Data Completa", "Emissao"], ["emissao", "dia", "data"], row);
+                    const ug = getVal(["Emitente - UG Código", "UG Codigo"], ["ug codigo", "emitente"], row).toUpperCase();
+                    const fav = getVal(["Favorecido Doc. Nome", "Favorecido"], ["favorecido", "doc. nome"], row).toUpperCase();
+                    const empenho = getVal(["Documento CCor Número"], ["ccor", "empenho"], row).toUpperCase();
+                    const doc = getVal(["Documento Número"], ["documento numero", "doc numero"], row).toUpperCase();
+                    const obs = getVal(["Doc - Observação Texto", "Observação"], ["observacao", "obs"], row).toUpperCase();
+                    const contrato = getVal(["COL_NR_CONTR_BASE", "Contrato"], ["contr_base", "contrato"], row).toUpperCase();
+                    
+                    let info = getVal(["ITEM_INFORMACAO", "INTEN_INFORMACAO", "Informacao"], ["informacao", "item_in", "inten_in"], row).toUpperCase();
+                    let valStr = getVal(["Valor Item (R$)", "Valor (R$)", "Valor"], ["valor", "vlr", "r$", "montante", "saldo"], row);
+                    
+                    if (!info) {
+                        const rowStr = row.join(" ").toUpperCase();
+                        if (rowStr.includes("EMPENHADO")) info = "EMPENHADO";
+                        else if (rowStr.includes("RECEBIDO")) info = "RECEBIDO";
+                        else if (rowStr.includes("LIQUIDADO")) info = "LIQUIDADO";
+                        else if (rowStr.includes("PAGO")) info = "PAGO";
+                        else if (rowStr.includes("CANCELADO")) info = "CANCELADO";
+                        else if (rowStr.includes("BLOQUEADO")) info = "BLOQUEADO";
+                    }
+
+                    if (!valStr && row.length > 0) {
+                        for(let c = row.length - 1; c >= 0; c--) {
+                            let t = parseValue(row[c]);
+                            if (t !== 0) { valStr = row[c]; break; }
+                        }
+                    }
+
+                    const valor = parseValue(valStr);
+                    const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
+
+                    if (!grouped[key]) {
+                        grouped[key] = {
+                            dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
+                            ug, favorecido: fav, empenho, documento: doc, obs, contrato,
+                            v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0
+                        };
+                    }
+
+                    if (info.includes("EMPENHADO")) grouped[key].v_empenhado += valor;
+                    else if (info.includes("RECEBIDO")) grouped[key].v_recebido += valor;
+                    else if (info.includes("LIQUIDADO")) grouped[key].v_liquidado += valor;
+                    else if (info.includes("PAGO")) grouped[key].v_pago += valor;
+                    else if (info.includes("CANCELADO")) grouped[key].v_cancelado += valor;
+                    else if (info.includes("BLOQUEADO")) grouped[key].v_bloqueado += valor;
+                }
+                
+                setRawData(Object.values(grouped));
+                setLoading(false);
+            };
+
+            const loadData = async (manualFileContent = null) => {
+                setLoading(true);
+                
+                if (manualFileContent) {
+                    setStatus("A processar ficheiro manual...");
+                    Papa.parse(manualFileContent, {
+                        header: false, skipEmptyLines: true,
+                        complete: (res) => {
+                            processData(res.data);
+                            setStatus("Offline - Dados Carregados Manualmente");
+                        }
+                    });
+                    return;
+                }
+
+                if (!API_KEY || API_KEY === "SUA_API_KEY_AQUI") {
+                    setStatus("Chave de API ausente. Utilize a Carga Manual (CSV) ou insira a chave no código.");
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    setStatus("A transferir dados via API Google...");
+                    const response = await fetch(API_URL);
+                    if (!response.ok) {
+                        let errMsg = response.statusText;
+                        try {
+                            const errData = await response.json();
+                            if (errData && errData.error && errData.error.message) {
+                                errMsg = errData.error.message;
+                            }
+                        } catch(e) {}
+                        setStatus(`API Bloqueada (${errMsg}). Utilize a Carga Manual (CSV).`);
+                        setLoading(false);
+                        return;
+                    }
+                    const json = await response.json();
+                    processData(json.values);
+                    setStatus("Online - Dados Sincronizados com Sucesso");
+                    
+                } catch (error) { 
+                    setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV)."); 
+                    setLoading(false); 
+                }
+            };
+
+            useEffect(() => { loadData(); }, []);
+
+            const filteredData = useMemo(() => {
+                let filtered = rawData.filter(item => {
+                    const matchUg = fUg.length === 0 || fUg.includes(item.ug);
+                    const matchFav = fFavorecido.length === 0 || fFavorecido.includes(item.favorecido);
+                    const matchEmpenho = fEmpenho.length === 0 || fEmpenho.includes(item.empenho);
+                    const matchDoc = fDocumento.length === 0 || fDocumento.includes(item.documento);
+                    const matchContrato = fContrato.length === 0 || fContrato.includes(item.contrato);
+                    
+                    const matchDiaDe = !dDiaDe || (item.diaVal && item.diaVal >= new Date(dDiaDe+"T00:00:00").getTime());
+                    const matchDiaAte = !dDiaAte || (item.diaVal && item.diaVal <= new Date(dDiaAte+"T23:59:59").getTime());
+
+                    const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase());
+                    const searchUgNomeMatch = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
+                    const searchEmpenhoMatch = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
+                    const searchDocumentoMatch = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
+                    const searchObsMatch = !searchObs || item.obs.includes(searchObs.toUpperCase());
+
+                    let matchNum = true;
+                    for (const key in numFilters) {
+                        if (numFilters[key].min !== '' && item[key] < parseFloat(numFilters[key].min)) { matchNum = false; break; }
+                        if (numFilters[key].max !== '' && item[key] > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                    }
+
+                    const matchBloqueado = !fOnlyBloqueado || item.v_bloqueado !== 0;
+                    const matchCancelado = !fOnlyCancelado || item.v_cancelado !== 0;
+
+                    return matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
+                           matchDiaDe && matchDiaAte && searchContratoTabelaMatch && searchUgNomeMatch && searchEmpenhoMatch && 
+                           searchDocumentoMatch && searchObsMatch && matchNum && matchBloqueado && matchCancelado;
+                });
+
+                if (sortConfig.key) {
+                    filtered.sort((a, b) => {
+                        let valA = a[sortConfig.key];
+                        let valB = b[sortConfig.key];
+                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return filtered;
+            }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
+
+            const kpis = useMemo(() => {
+                let totalEmpenhado = 0;
+                let totalRecebido = 0;
+                let totalLiquidado = 0;
+                let totalPago = 0;
+                let totalCancelado = 0;
+                let totalBloqueado = 0;
+                const uniqueContratos = new Set(); 
+
+                filteredData.forEach(item => {
+                    totalEmpenhado += item.v_empenhado;
+                    totalRecebido += item.v_recebido;
+                    totalLiquidado += item.v_liquidado;
+                    totalPago += item.v_pago;
+                    totalCancelado += item.v_cancelado;
+                    totalBloqueado += item.v_bloqueado;
+                    
+                    if (item.contrato && item.contrato.trim() !== "" && item.contrato !== "-") {
+                        uniqueContratos.add(item.contrato.trim());
+                    }
+                });
+
+                return {
+                    qtdContratos: uniqueContratos.size,
+                    totalEmpenhado,
+                    totalRecebido, percRecebido: totalEmpenhado ? (totalRecebido / totalEmpenhado) : 0,
+                    totalLiquidado, percLiquidado: totalEmpenhado ? (totalLiquidado / totalEmpenhado) : 0,
+                    totalPago, percPago: totalEmpenhado ? (totalPago / totalEmpenhado) : 0,
+                    totalCancelado, percCancelado: totalEmpenhado ? (totalCancelado / totalEmpenhado) : 0,
+                    totalBloqueado, percBloqueado: totalEmpenhado ? (totalBloqueado / totalEmpenhado) : 0
+                };
+            }, [filteredData]);
+
+            const getChartData = (keyName) => {
+                const map = {};
+                filteredData.forEach(item => {
+                    const k = item[keyName];
+                    if (!map[k]) map[k] = { label: k, empenhado: 0, recebido: 0, liquidado: 0, pago: 0, cancelado: 0, bloqueado: 0 };
+                    map[k].empenhado += item.v_empenhado;
+                    map[k].recebido += item.v_recebido;
+                    map[k].liquidado += item.v_liquidado;
+                    map[k].pago += item.v_pago;
+                    map[k].cancelado += item.v_cancelado;
+                    map[k].bloqueado += item.v_bloqueado;
+                });
+                return Object.values(map);
+            };
+
+            const dataByContrato = getChartData('contrato').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
+            const dataByFavorecido = getChartData('favorecido').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
+
+            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+
+            const chartConfigOptions = (dataArray) => ({
+                indexAxis: 'x', 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { 
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) { return dataArray[tooltipItems[0].dataIndex].label; },
+                            label: function(context) { return (context.dataset.label || '') + ': ' + formatBRL(context.raw); }
+                        }
+                    },
+                    datalabels: {
+                        display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
+                        color: '#ffffff',
+                        font: { weight: 'bold', size: 9 },
+                        formatter: (value) => shortenNumber(value),
+                        anchor: 'end',
+                        align: 'start',
+                        offset: 4,
+                        textStrokeColor: 'rgba(0,0,0,0.5)',
+                        textStrokeWidth: 2
+                    }
+                },
+                scales: { x: { ticks: { font: { size: 9 }, maxRotation: 45, minRotation: 45 } }, y: { ticks: { callback: v => shortenNumber(v) } } }
+            });
+
+            const exportMasterColumns = [
+                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
+                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
+                { header: "OBS", key: "obs" }, { header: "EMPENHADO", key: "v_empenhado", isCurrency: true },
+                { header: "RECEBIDO", key: "v_recebido", isCurrency: true }, { header: "LIQUIDADO", key: "v_liquidado", isCurrency: true },
+                { header: "PAGO", key: "v_pago", isCurrency: true }, { header: "CANCELADO", key: "v_cancelado", isCurrency: true },
+                { header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true }
+            ];
+
+            if (loading) return (
+                <div className="h-screen flex flex-col items-center justify-center font-black text-slate-400 gap-4">
+                    <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-800 rounded-full animate-spin"></div>
+                    <p className="tracking-widest">A ESTRUTURAR DADOS...</p>
+                </div>
+            );
+
+            return (
+                <div className="p-4 md:p-8">
+                    {/* CABEÇALHO */}
+                    <header className="max-w-[1600px] mx-auto mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-800">PAINEL DE DOCUMENTOS CONTÁBEIS DOS CONTRATOS</h1>
+                            <p className={`text-[11px] font-bold mt-1 ${status.includes("Erro") || status.includes("falhou") || status.includes("ausente") || status.includes("Bloqueada") ? "text-red-600" : "text-emerald-600"}`}>
+                                ● {status}
+                            </p>
+                        </div>
+                        <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-lg border shadow-sm">
+                            <span className="text-[10px] font-black text-slate-400 uppercase">Carga Manual (CSV):</span>
+                            <input type="file" accept=".csv" onChange={(e) => {
+                                const r = new FileReader();
+                                r.onload = (ev) => loadData(ev.target.result);
+                                r.readAsText(e.target.files[0]);
+                            }} className="text-xs cursor-pointer text-blue-600 font-bold w-[200px]" />
+                        </div>
+                    </header>
+
+                    <div className="max-w-[1600px] mx-auto mb-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        
+                        <h2 className="text-xs font-black uppercase tracking-widest text-[#99bbd4] mb-2">Filtros Dinâmicos</h2>
+                        
+                        <div className="flex flex-col items-start gap-1 w-full mb-4">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Status Especiais e Ações Rápidas:</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button onClick={() => setFOnlyBloqueado(!fOnlyBloqueado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyBloqueado ? 'bg-orange-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                                    Valores Bloqueados
+                                </button>
+                                <button onClick={() => setFOnlyCancelado(!fOnlyCancelado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyCancelado ? 'bg-red-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                                    Valores Cancelados
+                                </button>
+                                <div className="w-[2px] h-5 bg-slate-300 mx-1 rounded"></div>
+                                <button onClick={applyFilterAcessoHoje} className="text-[10px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 transition shadow-sm">
+                                    Hoje
+                                </button>
+                                <button onClick={clearAllFilters} className="text-[10px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition shadow-sm">
+                                    Limpar Todos os Filtros
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                            <MultiSelect label="UG CÓDIGO" options={[...new Set(rawData.map(r => r.ug))].sort()} selected={fUg} onChange={setFUg} />
+                            <MultiSelect label="FAVORECIDO" options={[...new Set(rawData.map(r => r.favorecido))].sort()} selected={fFavorecido} onChange={setFFavorecido} />
+                            <MultiSelect label="EMPENHO" options={[...new Set(rawData.map(r => r.empenho))].sort()} selected={fEmpenho} onChange={setFEmpenho} />
+                            <MultiSelect label="DOCUMENTO" options={[...new Set(rawData.map(r => r.documento))].sort()} selected={fDocumento} onChange={setFDocumento} />
+                            <MultiSelect label="CONTRATO" options={[...new Set(rawData.map(r => r.contrato))].sort()} selected={fContrato} onChange={setFContrato} />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                            <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
+                            <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
+                        </div>
+                    </div>
+
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+                        <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
+                        <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                        <KPICard title="Recebido" value={kpis.totalRecebido} subValue={kpis.percRecebido} color="violet" isCurrency={true} />
+                        <KPICard title="Liquidado" value={kpis.totalLiquidado} subValue={kpis.percLiquidado} color="amber" isCurrency={true} />
+                        <KPICard title="Pago" value={kpis.totalPago} subValue={kpis.percPago} color="emerald" isCurrency={true} />
+                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} color="red" isCurrency={true} />
+                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} color="orange" isCurrency={true} />
+                    </div>
+
+                    {/* GRÁFICOS PARTE 1 */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 gap-8 mb-8">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por CONTRATO (Top 20)</h3>
+                            <div className="h-[400px]">
+                                <ChartComponent id="chartContratoPrincipal" type="bar" data={{
+                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '01_TOTAL_EMPENHADO', data: dataByContrato.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
+                                        { label: '02_TOTAL_RECEBIDO', data: dataByContrato.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
+                                        { label: '03_TOTAL_LIQUIDADO', data: dataByContrato.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
+                                        { label: '04_TOTAL_PAGO', data: dataByContrato.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByContrato)} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por FAVORECIDO (Top 20)</h3>
+                            <div className="h-[400px]">
+                                <ChartComponent id="chartFavorecidoPrincipal" type="bar" data={{
+                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '01_TOTAL_EMPENHADO', data: dataByFavorecido.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
+                                        { label: '02_TOTAL_RECEBIDO', data: dataByFavorecido.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
+                                        { label: '03_TOTAL_LIQUIDADO', data: dataByFavorecido.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
+                                        { label: '04_TOTAL_PAGO', data: dataByFavorecido.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByFavorecido)} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* GRÁFICOS PARTE 2 */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por CONTRATO</h3>
+                            <div className="h-[350px]">
+                                <ChartComponent id="chartContratoSec" type="bar" data={{
+                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '05_TOTAL_CANCELADO', data: dataByContrato.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
+                                        { label: '06_TOTAL_BLOQUEADO', data: dataByContrato.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByContrato)} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por FAVORECIDO</h3>
+                            <div className="h-[350px]">
+                                <ChartComponent id="chartFavorecidoSec" type="bar" data={{
+                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '05_TOTAL_CANCELADO', data: dataByFavorecido.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
+                                        { label: '06_TOTAL_BLOQUEADO', data: dataByFavorecido.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByFavorecido)} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* TABELA DE DADOS MASTER COM EXPORTAÇÃO */}
+                    <div className="max-w-[1600px] mx-auto bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-10">
+                        <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
+                            <h3 className="text-white text-xs font-black tracking-widest uppercase">Detalhamento Financeiro Master (Mostrando {Math.min(visibleRows, filteredData.length)} de {filteredData.length})</h3>
+                            <div className="flex gap-2">
+                                <button onClick={() => exportTable.toExcel(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                                <button onClick={() => exportTable.toCSV(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                                <button onClick={() => exportTable.toPDF(filteredData, "Detalhamento_Master", exportMasterColumns, "DETALHAMENTO FINANCEIRO MASTER")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                            <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
+                                <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                    <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
+                                        <TextHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                        <TextHeader widthClass="w-[8%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
+                                        <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
+                                        <TextHeader widthClass="w-[12%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                        <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                        <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
+                                        <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
+                                        
+                                        <NumericHeader widthClass="w-[6%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredData.slice(0, visibleRows).map((row, i) => (
+                                        <tr key={i} className="hover:bg-blue-50 transition-colors">
+                                            <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
+                                            <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
+                                            <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
+                                            <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
+                                            
+                                            <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30">{formatBRL(row.v_empenhado)}</td>
+                                            <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words">{formatBRL(row.v_recebido)}</td>
+                                            <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30">{formatBRL(row.v_liquidado)}</td>
+                                            <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words">{formatBRL(row.v_pago)}</td>
+                                            <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30">{formatBRL(row.v_cancelado)}</td>
+                                            <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words">{formatBRL(row.v_bloqueado)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {visibleRows < filteredData.length && (
+                            <div className="p-4 bg-slate-50 border-t flex justify-center">
+                                <button 
+                                    onClick={() => setVisibleRows(prev => prev + 100)}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-6 py-2 rounded transition"
+                                >
+                                    Carregar mais registros (+100)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* NOVAS SUB-TABELAS ESPECÍFICAS (COM EXPORTAÇÃO INDIVIDUAL) */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                        <SubTable title="Detalhamento - Empenhado" data={filteredData} metricField="v_empenhado" metricLabel="EMPENHADO" headerColor="bg-blue-800" textColor="text-blue-700" rowBgColor="bg-blue-50/30" />
+                        <SubTable title="Detalhamento - Recebido" data={filteredData} metricField="v_recebido" metricLabel="RECEBIDO" headerColor="bg-violet-800" textColor="text-violet-700" rowBgColor="" />
+                        <SubTable title="Detalhamento - Liquidado" data={filteredData} metricField="v_liquidado" metricLabel="LIQUIDADO" headerColor="bg-amber-700" textColor="text-amber-700" rowBgColor="bg-amber-50/30" />
+                        <SubTable title="Detalhamento - Pago" data={filteredData} metricField="v_pago" metricLabel="PAGO" headerColor="bg-emerald-800" textColor="text-emerald-700" rowBgColor="" />
+                        <SubTable title="Detalhamento - Cancelado" data={filteredData} metricField="v_cancelado" metricLabel="CANCELADO" headerColor="bg-red-800" textColor="text-red-700" rowBgColor="bg-red-50/30" />
+                        <SubTable title="Detalhamento - Bloqueado" data={filteredData} metricField="v_bloqueado" metricLabel="BLOQUEADO" headerColor="bg-orange-800" textColor="text-orange-700" rowBgColor="" />
+                    </div>
+                </div>
+            );
+        }
+
+        // =========================================================
+        // COMPONENTE DE LOGIN (APP RAIZ)
+        // =========================================================
+        function App() {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [username, setUsername] = useState("");
+            const [password, setPassword] = useState("");
+            const [error, setError] = useState("");
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                const users = {};
+                users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
+                users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
+                users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
+                users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
+                users[_decode("01100010 01101111 01110101 01101100 01100101 01110110 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
+
+                const inputUser = username.toLowerCase().trim();
+                if (users[inputUser] && users[inputUser] === password) {
+                    setIsAuthenticated(true);
+                    setError("");
+                } else {
+                    setError("Credenciais inválidas. Verifique o usuário e a senha.");
+                }
+            };
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-800 relative overflow-hidden">
+                        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+                        <div className="bg-white p-8 rounded-2xl shadow-2xl w-[400px] max-w-[90%] border-t-8 border-blue-600 relative z-10">
+                            <div className="text-center mb-8">
+                                <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Acesso Restrito</h1>
+                                <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">Painel de Documentos Contábeis</p>
+                            </div>
+                            <form onSubmit={handleLogin} className="space-y-5">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
+                                    <input 
+                                        type="text" 
+                                        value={username} 
+                                        onChange={e => setUsername(e.target.value)} 
+                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
+                                        placeholder="Digite o seu usuário..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
+                                    <input 
+                                        type="password" 
+                                        value={password} 
+                                        onChange={e => setPassword(e.target.value)} 
+                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                                {error && (
+                                    <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                                        <p className="text-[11px] font-bold text-red-600 text-center">{error}</p>
+                                    </div>
+                                )}
+                                <button 
+                                    type="submit" 
+                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2"
+                                >
+                                    Autenticar Acesso
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return <Dashboard />;
+        }
+
+        // =========================================================
+        // SUB-COMPONENTES DE UI DA TABELA
+        // =========================================================
+
+        function TextHeader({ label, field, current, onSort, align="left", searchVal, onSearchChange, widthClass }) {
+            const isSorted = current.key === field;
+            return (
+                <th className={`p-2 transition text-${align} bg-slate-100 relative group ${widthClass || 'w-auto'}`}>
+                    <div onMouseDown={startResize} className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-transparent hover:bg-blue-400 z-20"></div>
+                    <div 
+                        className={`flex items-center gap-1 cursor-pointer hover:text-blue-500 justify-${align === 'right' ? 'end' : align === 'center' ? 'center' : 'start'}`}
+                        onClick={() => onSort(field)}
+                    >
+                        {label}
+                        <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+                    </div>
+                    {onSearchChange !== undefined && (
+                        <input 
+                            type="text" 
+                            placeholder="Buscar..." 
+                            value={searchVal}
+                            onChange={(e) => onSearchChange(e.target.value)}
+                            onClick={(e) => e.stopPropagation()} 
+                            className="mt-2 w-full px-1 py-1 text-slate-800 text-[9px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                        />
+                    )}
+                </th>
+            );
+        }
+
+        function NumericHeader({ label, field, current, onSort, numFilters, setNumFilters, align="left", widthClass }) {
+            const isSorted = current.key === field;
+            const filterMin = numFilters[field] ? numFilters[field].min : '';
+            const filterMax = numFilters[field] ? numFilters[field].max : '';
+
+            const handleMin = (e) => {
+                const val = e.target.value;
+                setNumFilters(p => {
+                    const newFilters = {...p};
+                    newFilters[field] = {...newFilters[field], min: val};
+                    return newFilters;
+                });
+            };
+            
+            const handleMax = (e) => {
+                const val = e.target.value;
+                setNumFilters(p => {
+                    const newFilters = {...p};
+                    newFilters[field] = {...newFilters[field], max: val};
+                    return newFilters;
+                });
+            };
+
+            return (
+                <th className={`p-2 transition text-${align} bg-slate-100 relative group ${widthClass || 'w-auto'}`}>
+                    <div onMouseDown={startResize} className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-transparent hover:bg-blue-400 z-20"></div>
+                    <div 
+                        className={`flex items-center gap-1 cursor-pointer hover:text-blue-500 justify-${align === 'right' ? 'end' : align === 'center' ? 'center' : 'start'}`}
+                        onClick={() => onSort(field)}
+                    >
+                        {label}
+                        <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+                    </div>
+                    <div className="flex gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                            type="number" 
+                            placeholder="> Min" 
+                            value={filterMin}
+                            onChange={handleMin}
+                            className="w-1/2 px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                        />
+                        <input 
+                            type="number" 
+                            placeholder="< Max" 
+                            value={filterMax}
+                            onChange={handleMax}
+                            className="w-1/2 px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                        />
+                    </div>
+                </th>
+            );
+        }
+
+        function MultiSelect({ label, options, selected, onChange }) {
+            const [isOpen, setIsOpen] = useState(false);
+            const [search, setSearch] = useState("");
+            const ref = useRef();
+
+            useEffect(() => {
+                const handleClickOutside = (e) => {
+                    if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            const toggleOption = (opt) => {
+                if (selected.includes(opt)) onChange(selected.filter(item => item !== opt));
+                else onChange([...selected, opt]);
+            };
+
+            const filteredOptions = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+
+            const markAllVisible = () => {
+                const newSelection = new Set([...selected, ...filteredOptions]);
+                onChange(Array.from(newSelection));
+            };
+
+            return (
+                <div className="relative" ref={ref}>
+                    <label className="text-[9px] font-black text-slate-400 block mb-1 uppercase tracking-widest">{label}</label>
+                    <div 
+                        className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-bold text-slate-700 cursor-pointer flex justify-between items-center shadow-sm"
+                        onClick={() => setIsOpen(!isOpen)}
+                    >
+                        <span className="truncate">{selected.length === 0 ? "TODOS OS REGISTROS" : `${selected.length} selecionado(s)`}</span>
+                        <span className="text-[10px]">▼</span>
+                    </div>
+                    {isOpen && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-2xl max-h-72 flex flex-col">
+                            <div className="p-2 border-b bg-slate-50 flex flex-col gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="Pesquisar opções..." 
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="w-full border border-slate-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
+                                />
+                                <div className="flex gap-2">
+                                    <button onClick={markAllVisible} className="text-[9px] font-bold bg-slate-200 text-slate-800 px-2 py-1 rounded w-full hover:bg-slate-300">Marcar Visíveis</button>
+                                    <button onClick={() => onChange([])} className="text-[9px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded w-full hover:bg-red-200">Limpar</button>
+                                </div>
+                            </div>
+                            <div className="overflow-y-auto p-1">
+                                {filteredOptions.length === 0 && <p className="text-[10px] text-center text-slate-400 p-2">Nenhum resultado.</p>}
+                                {filteredOptions.map((o, i) => (
+                                    <label key={i} className="flex items-center px-2 py-2 hover:bg-blue-50 cursor-pointer text-[10px] font-bold text-slate-700 border-b border-slate-100 last:border-0">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={selected.includes(o)} 
+                                            onChange={() => toggleOption(o)} 
+                                            className="mr-2 cursor-pointer"
+                                        />
+                                        <span className="truncate leading-tight">{o}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function DateInput({ label, value, onChange }) {
+            return (
+                <div>
+                    <label className="text-[9px] font-black text-slate-400 block mb-1 uppercase tracking-widest">{label}</label>
+                    <input type="date" value={value} onChange={e => onChange(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-2 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 transition shadow-sm cursor-pointer" />
+                </div>
+            );
+        }
+
+        function KPICard({ title, value, subValue, color, isCurrency }) {
+            const colors = {
+                slate: "border-slate-800 text-slate-800",
+                blue: "border-blue-500 text-blue-700",
+                violet: "border-violet-500 text-violet-700",
+                amber: "border-amber-500 text-amber-600",
+                emerald: "border-emerald-500 text-emerald-600",
+                red: "border-red-500 text-red-600",
+                orange: "border-orange-500 text-orange-600"
+            };
+            
+            const mainText = isCurrency ? formatBRL(value) : value.toLocaleString('pt-BR');
+            const subText = subValue !== undefined ? `(${formatPercentBR(subValue)})` : '';
+
+            return (
+                <div className={`bg-white p-3 sm:p-4 rounded-2xl border-t-8 shadow-md flex flex-col justify-center overflow-hidden min-w-0 ${colors[color]}`}>
+                    <h3 className="text-[9px] font-black uppercase tracking-widest opacity-50 mb-1 truncate" title={title}>{title}</h3>
+                    <div className="flex flex-col w-full min-w-0">
+                        <AutoFitText text={mainText} className="font-black text-xl sm:text-2xl tracking-tight" />
+                        {subValue !== undefined && (
+                            <div className="text-[10px] sm:text-xs font-bold opacity-80 mt-1 truncate">{subText}</div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
