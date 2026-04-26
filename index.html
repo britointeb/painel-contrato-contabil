@@ -179,7 +179,7 @@
             },
             toPDF: (data, filename, columns, title) => {
                 const { jsPDF } = window.jspdf;
-                const doc = new jsPDF('l', 'pt', 'a4'); // Landscape layout
+                const doc = new jsPDF('l', 'pt', 'a4'); 
                 doc.setFontSize(14);
                 doc.text(title, 40, 30);
                 
@@ -248,6 +248,71 @@
             }, [data, options]);
             return <canvas id={id}></canvas>;
         };
+
+        // NOVO: Gráfico de Funil para o Volume Financeiro
+        function FunnelChart({ data }) {
+            const max = data.length > 0 && data[0].value > 0 ? data[0].value : 1;
+            return (
+                <div className="w-full h-full flex flex-col justify-around gap-1 mt-2">
+                    {data.map((item, i) => {
+                        const pct = data[0].value > 0 ? (item.value / max) * 100 : 0;
+                        const w = Math.max(pct, 15);
+                        return (
+                            <div key={i} className="w-full flex-1 flex flex-col justify-center">
+                                <div className="flex justify-between px-1 mb-1">
+                                    <span className="text-[9px] font-black text-slate-500 uppercase">{item.label}</span>
+                                    <span className="text-[9px] font-bold text-slate-500">{formatBRL(item.value)}</span>
+                                </div>
+                                <div className="w-full h-5 sm:h-6 flex justify-center">
+                                    <div 
+                                        className={`${item.color} h-full rounded flex items-center justify-center shadow-sm cursor-pointer transition-all duration-500`}
+                                        style={{ width: `${w}%` }}
+                                        title={`${item.label}: ${formatBRL(item.value)}`}
+                                    >
+                                        <span className="text-white font-black text-[10px] drop-shadow-md">{pct.toFixed(1)}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        function LatestDocCard({ title, doc, metricField, colorClass, showEmitente }) {
+            if (!doc) return (
+                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 opacity-60 flex flex-col justify-center h-full">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">{title}</h4>
+                    <p className="text-xs font-bold text-slate-400">Nenhum documento encontrado.</p>
+                </div>
+            );
+            return (
+                <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border-t-4 bg-white flex flex-col justify-center border-x border-b border-slate-200 h-full ${colorClass.split(' ')[0]}`}>
+                    <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${colorClass.split(' ')[1]}`}>{title}</h4>
+                    
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Data:</span>
+                        <span className="text-sm font-black text-slate-700">{doc.dia}</span>
+                    </div>
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Número:</span>
+                        <span className="text-[11px] font-black text-slate-700 truncate max-w-[65%] text-right" title={doc.documento}>{doc.documento}</span>
+                    </div>
+                    {showEmitente && (
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Emitente:</span>
+                            <span className="text-[10px] font-black text-slate-700 truncate max-w-[65%] text-right" title={doc.ug}>{doc.ug}</span>
+                        </div>
+                    )}
+                    <div className="flex justify-between items-center mt-auto pt-3 border-t border-slate-100">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Valor:</span>
+                        <span className={`text-lg sm:text-xl font-black truncate max-w-[65%] text-right ${colorClass.split(' ')[1]}`} title={formatBRL(doc[metricField])}>
+                            {formatBRL(doc[metricField])}
+                        </span>
+                    </div>
+                </div>
+            );
+        }
 
         // =========================================================
         // SUB-TABELAS COM EXPORTAÇÃO
@@ -642,6 +707,40 @@
             const dataByContrato = getChartData('contrato').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
             const dataByFavorecido = getChartData('favorecido').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
 
+            // =========================================================
+            // DADOS PARA OS NOVOS GRÁFICOS E KPIS
+            // =========================================================
+            const latestDocs = useMemo(() => {
+                const getLatest = (field) => {
+                    const validDocs = filteredData.filter(d => d[field] !== 0);
+                    if (validDocs.length === 0) return null;
+                    return validDocs.sort((a, b) => b.diaVal - a.diaVal)[0];
+                };
+                return {
+                    empenhado: getLatest('v_empenhado'),
+                    recebido: getLatest('v_recebido'),
+                    liquidado: getLatest('v_liquidado'),
+                    pago: getLatest('v_pago')
+                };
+            }, [filteredData]);
+
+            const docCounts = useMemo(() => {
+                const uniqueDocs = (field) => new Set(filteredData.filter(d => d[field] !== 0).map(d => d.documento)).size;
+                return {
+                    empenhado: uniqueDocs('v_empenhado'),
+                    recebido: uniqueDocs('v_recebido'),
+                    liquidado: uniqueDocs('v_liquidado'),
+                    pago: uniqueDocs('v_pago')
+                };
+            }, [filteredData]);
+
+            const funnelData = [
+                { label: 'EMPENHADO', value: kpis.totalEmpenhado, color: 'bg-blue-500' },
+                { label: 'RECEBIDO', value: kpis.totalRecebido, color: 'bg-violet-500' },
+                { label: 'LIQUIDADO', value: kpis.totalLiquidado, color: 'bg-amber-500' },
+                { label: 'PAGO', value: kpis.totalPago, color: 'bg-emerald-500' }
+            ];
+
             const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
 
             const chartConfigOptions = (dataArray) => ({
@@ -667,8 +766,33 @@
                         textStrokeWidth: 2
                     }
                 },
-                scales: { x: { ticks: { font: { size: 9 }, maxRotation: 45, minRotation: 45 } }, y: { ticks: { callback: v => shortenNumber(v) } } }
+                scales: { 
+                    x: { 
+                        ticks: { font: { size: 9 }, maxRotation: -90, minRotation: -90 } 
+                    }, 
+                    y: { ticks: { callback: v => shortenNumber(v) } } 
+                }
             });
+
+            const doughnutOptionsDocs = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: { callbacks: { label: function(ctx) { return ` Qtd Documentos: ${ctx.raw}`; } } },
+                    datalabels: {
+                        color: '#ffffff',
+                        font: { weight: 'bold', size: 10 },
+                        formatter: (value, ctx) => {
+                            let sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                            if (sum === 0 || value === 0) return null; 
+                            return (value * 100 / sum).toFixed(1) + '%';
+                        },
+                        textStrokeColor: 'rgba(0,0,0,0.6)',
+                        textStrokeWidth: 2
+                    },
+                    legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } }
+                }
+            };
 
             const exportMasterColumns = [
                 { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
@@ -751,6 +875,41 @@
                         <KPICard title="Pago" value={kpis.totalPago} subValue={kpis.percPago} color="emerald" isCurrency={true} />
                         <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} color="red" isCurrency={true} />
                         <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} color="orange" isCurrency={true} />
+                    </div>
+
+                    {/* NOVA SESSÃO: ROSCAS E ÚLTIMOS DOCUMENTOS */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                        {/* Gráficos de Composição */}
+                        <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Composição de Documentos</h3>
+                            <div className="flex flex-col gap-6 h-full justify-between pb-4">
+                                <div className="h-[200px]">
+                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">QTD DE DOCUMENTOS ÚNICOS</h4>
+                                    <ChartComponent id="doughnutQtd" type="doughnut" data={{
+                                        labels: ['Empenhado', 'Recebido', 'Liquidado', 'Pago'],
+                                        datasets: [{
+                                            data: [docCounts.empenhado, docCounts.recebido, docCounts.liquidado, docCounts.pago],
+                                            backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
+                                        }]
+                                    }} options={doughnutOptionsDocs} />
+                                </div>
+                                <div className="h-[200px]">
+                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">VOLUME FINANCEIRO TOTAL (R$)</h4>
+                                    <FunnelChart data={funnelData} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Últimos Documentos */}
+                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Últimos Lançamentos (Recentes)</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-30px)]">
+                                <LatestDocCard title="Último Documento: EMPENHADO" doc={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
+                                <LatestDocCard title="Último Documento: RECEBIDO" doc={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
+                                <LatestDocCard title="Último Documento: LIQUIDADO" doc={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
+                                <LatestDocCard title="Último Documento: PAGO" doc={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                            </div>
+                        </div>
                     </div>
 
                     {/* GRÁFICOS PARTE 1 */}
