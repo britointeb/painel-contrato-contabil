@@ -106,12 +106,30 @@
             return new Date(dStr);
         };
 
-        // Formatação de labels em linha única para evitar sobreposição nos gráficos inclinados
-        const formatLabelSingleLine = (text) => {
-            if (!text) return "";
+        // Formatação de labels com quebra de linha (array de strings) para o Chart.js
+        const formatLabelMultiLine = (text) => {
+            if (!text) return [""];
             let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
-            if (cleanText.length > 25) return cleanText.substring(0, 25) + '...';
-            return cleanText;
+            if (cleanText.length <= 18) return [cleanText];
+            
+            const words = cleanText.split(' ');
+            let lines = [];
+            let currentLine = '';
+
+            words.forEach(word => {
+                if ((currentLine + word).length > 18) {
+                    if (currentLine) lines.push(currentLine.trim());
+                    currentLine = word + ' ';
+                } else {
+                    currentLine += word + ' ';
+                }
+            });
+            if (currentLine) lines.push(currentLine.trim());
+
+            if (lines.length > 2) {
+                return [lines[0], lines[1].substring(0, 15) + '...'];
+            }
+            return lines;
         };
 
         const startResize = (e) => {
@@ -239,14 +257,13 @@
             return <canvas id={id}></canvas>;
         };
 
-        // Gráfico de Funil Horizontal Alinhado ao Centro
         function FunnelChart({ data }) {
             const max = data.length > 0 && data[0].value > 0 ? data[0].value : 1;
             return (
                 <div className="w-full h-full flex flex-col-reverse items-center justify-center gap-2 sm:gap-3 py-2">
                     {data.map((item, i) => {
                         const pct = data[0].value > 0 ? (item.value / max) * 100 : 0;
-                        const w = Math.max(pct, 15); // Largura mínima de 15% para o texto caber
+                        const w = Math.max(pct, 15); 
                         return (
                             <div key={i} className="w-full flex flex-col items-center justify-center flex-1">
                                 <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase mb-1">
@@ -301,825 +318,6 @@
                     </div>
                 </div>
             );
-        }
-
-        // =========================================================
-        // SUB-TABELAS COM EXPORTAÇÃO
-        // =========================================================
-        function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor }) {
-            const [limit, setLimit] = useState(100);
-            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-            
-            const [searchContrato, setSearchContrato] = useState(""); 
-            const [searchUgNome, setSearchUgNome] = useState(""); 
-            const [searchEmpenho, setSearchEmpenho] = useState("");
-            const [searchDocumento, setSearchDocumento] = useState("");
-            const [searchObs, setSearchObs] = useState("");
-            const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''} });
-
-            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
-
-            const tableData = useMemo(() => {
-                let filtered = data.filter(row => row[metricField] !== 0);
-
-                filtered = filtered.filter(item => {
-                    const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
-                    const matchUgNome = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
-                    const matchEmpenho = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
-                    const matchDocumento = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
-                    const matchObs = !searchObs || item.obs.includes(searchObs.toUpperCase());
-
-                    let matchNum = true;
-                    if (numFilters[metricField]) {
-                        if (numFilters[metricField].min !== '' && item[metricField] < parseFloat(numFilters[metricField].min)) matchNum = false;
-                        if (numFilters[metricField].max !== '' && item[metricField] > parseFloat(numFilters[metricField].max)) matchNum = false;
-                    }
-                    return matchContrato && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum;
-                });
-
-                if (sortConfig.key) {
-                    filtered.sort((a, b) => {
-                        let valA = a[sortConfig.key];
-                        let valB = b[sortConfig.key];
-                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-                        return 0;
-                    });
-                }
-                return filtered;
-            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
-            
-            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
-
-            const exportColumns = [
-                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
-                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
-                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
-                { header: "OBS", key: "obs" },
-                { header: metricLabel, key: metricField, isCurrency: true }
-            ];
-
-            return (
-                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col h-[500px]">
-                    <div className={`${headerColor} px-4 py-3 flex justify-between items-center flex-wrap gap-2`}>
-                        <h3 className="text-white text-xs font-black tracking-widest uppercase">{title} ({tableData.length})</h3>
-                        <div className="flex gap-2">
-                            <button onClick={() => exportTable.toExcel(tableData, title, exportColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
-                            <button onClick={() => exportTable.toCSV(tableData, title, exportColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
-                            <button onClick={() => exportTable.toPDF(tableData, title, exportColumns, title.toUpperCase())} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto overflow-y-auto flex-1">
-                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
-                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
-                                <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                    <TextHeader widthClass="w-[8%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
-                                    <TextHeader widthClass="w-[10%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
-                                    <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
-                                    <TextHeader widthClass="w-[18%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
-                                    <TextHeader widthClass="w-[10%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
-                                    <TextHeader widthClass="w-[10%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
-                                    <TextHeader widthClass="w-[22%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
-                                    <NumericHeader widthClass="w-[16%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {tableData.slice(0, limit).map((row, i) => (
-                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
-                                        <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                        <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
-                                        <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
-                                        <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
-                                            {formatBRL(row[metricField])}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {limit < tableData.length && (
-                        <div className="p-2 bg-slate-50 border-t flex justify-center">
-                            <button 
-                                onClick={() => setLimit(prev => prev + 100)}
-                                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] px-4 py-1 rounded transition"
-                            >
-                                Ver mais (+100)
-                            </button>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        // =========================================================
-        // DASHBOARD MASTER (ESTRUTURA DE DADOS E GRAFICOS)
-        // =========================================================
-        function Dashboard() {
-            const [rawData, setRawData] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [status, setStatus] = useState("A processar conexão...");
-            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-            
-            const [fUg, setFUg] = useState([]);
-            const [fFavorecido, setFFavorecido] = useState([]);
-            const [fEmpenho, setFEmpenho] = useState([]);
-            const [fDocumento, setFDocumento] = useState([]);
-            const [fContrato, setFContrato] = useState([]);
-            const [dDiaDe, setDDiaDe] = useState("");
-            const [dDiaAte, setDDiaAte] = useState("");
-
-            const [searchContratoTabela, setSearchContratoTabela] = useState("");
-            const [searchUgNome, setSearchUgNome] = useState(""); 
-            const [searchEmpenho, setSearchEmpenho] = useState("");
-            const [searchDocumento, setSearchDocumento] = useState("");
-            const [searchObs, setSearchObs] = useState("");
-
-            // Estados Especiais
-            const [fOnlyBloqueado, setFOnlyBloqueado] = useState(false);
-            const [fOnlyCancelado, setFOnlyCancelado] = useState(false);
-
-            const [visibleRows, setVisibleRows] = useState(100);
-
-            const initialNumFilters = {
-                v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
-                v_liquidado: {min:'', max:''}, v_pago: {min:'', max:''},
-                v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''}
-            };
-            const [numFilters, setNumFilters] = useState(initialNumFilters);
-
-            useEffect(() => { setVisibleRows(100); }, [fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
-
-            const clearAllFilters = () => {
-                setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
-                setDDiaDe(""); setDDiaAte("");
-                setSearchContratoTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs("");
-                setNumFilters(initialNumFilters);
-                setFOnlyBloqueado(false);
-                setFOnlyCancelado(false);
-            };
-
-            const applyFilterAcessoHoje = () => {
-                const today = new Date();
-                const yyyy = today.getFullYear();
-                const mm = String(today.getMonth() + 1).padStart(2, '0');
-                const dd = String(today.getDate()).padStart(2, '0');
-                setDDiaDe(`${yyyy}-${mm}-${dd}`);
-                setDDiaAte(""); 
-            };
-
-            const processData = (rowsArray) => {
-                if (!rowsArray || rowsArray.length < 2) {
-                    setStatus("Planilha vazia ou sem dados válidos.");
-                    setLoading(false);
-                    return;
-                }
-
-                setStatus("A estruturar matriz de dados...");
-                const headers = rowsArray[0];
-                const hMap = {};
-                headers.forEach((h, i) => { if(h) hMap[normalizeStr(h)] = i; });
-
-                const getVal = (exactNames, fallbackKeywords, row) => {
-                    for (let name of exactNames) {
-                        let n = normalizeStr(name);
-                        if (hMap[n] !== undefined) {
-                            let v = row[hMap[n]];
-                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
-                        }
-                    }
-                    for (let kw of fallbackKeywords) {
-                        let nKw = normalizeStr(kw);
-                        let foundKey = Object.keys(hMap).find(k => k.includes(nKw));
-                        if (foundKey) {
-                            let v = row[hMap[foundKey]];
-                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
-                        }
-                    }
-                    return "";
-                };
-
-                const grouped = {};
-
-                for (let i = 1; i < rowsArray.length; i++) {
-                    const row = rowsArray[i];
-                    if (!row || row.length === 0) continue;
-                    
-                    const dia = getVal(["Emissão - Dia Data Completa", "Emissao"], ["emissao", "dia", "data"], row);
-                    const ug = getVal(["Emitente - UG Código", "UG Codigo"], ["ug codigo", "emitente"], row).toUpperCase();
-                    const fav = getVal(["Favorecido Doc. Nome", "Favorecido"], ["favorecido", "doc. nome"], row).toUpperCase();
-                    const empenho = getVal(["Documento CCor Número"], ["ccor", "empenho"], row).toUpperCase();
-                    const doc = getVal(["Documento Número"], ["documento numero", "doc numero"], row).toUpperCase();
-                    const obs = getVal(["Doc - Observação Texto", "Observação"], ["observacao", "obs"], row).toUpperCase();
-                    const contrato = getVal(["COL_NR_CONTR_BASE", "Contrato"], ["contr_base", "contrato"], row).toUpperCase();
-                    
-                    let info = getVal(["ITEM_INFORMACAO", "INTEN_INFORMACAO", "Informacao"], ["informacao", "item_in", "inten_in"], row).toUpperCase();
-                    let valStr = getVal(["Valor Item (R$)", "Valor (R$)", "Valor"], ["valor", "vlr", "r$", "montante", "saldo"], row);
-                    
-                    if (!info) {
-                        const rowStr = row.join(" ").toUpperCase();
-                        if (rowStr.includes("EMPENHADO")) info = "EMPENHADO";
-                        else if (rowStr.includes("RECEBIDO")) info = "RECEBIDO";
-                        else if (rowStr.includes("LIQUIDADO")) info = "LIQUIDADO";
-                        else if (rowStr.includes("PAGO")) info = "PAGO";
-                        else if (rowStr.includes("CANCELADO")) info = "CANCELADO";
-                        else if (rowStr.includes("BLOQUEADO")) info = "BLOQUEADO";
-                    }
-
-                    if (!valStr && row.length > 0) {
-                        for(let c = row.length - 1; c >= 0; c--) {
-                            let t = parseValue(row[c]);
-                            if (t !== 0) { valStr = row[c]; break; }
-                        }
-                    }
-
-                    const valor = parseValue(valStr);
-                    const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
-
-                    if (!grouped[key]) {
-                        grouped[key] = {
-                            dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
-                            ug, favorecido: fav, empenho, documento: doc, obs, contrato,
-                            v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0
-                        };
-                    }
-
-                    if (info.includes("EMPENHADO")) grouped[key].v_empenhado += valor;
-                    else if (info.includes("RECEBIDO")) grouped[key].v_recebido += valor;
-                    else if (info.includes("LIQUIDADO")) grouped[key].v_liquidado += valor;
-                    else if (info.includes("PAGO")) grouped[key].v_pago += valor;
-                    else if (info.includes("CANCELADO")) grouped[key].v_cancelado += valor;
-                    else if (info.includes("BLOQUEADO")) grouped[key].v_bloqueado += valor;
-                }
-                
-                setRawData(Object.values(grouped));
-                setLoading(false);
-            };
-
-            const loadData = async (manualFileContent = null) => {
-                setLoading(true);
-                
-                if (manualFileContent) {
-                    setStatus("A processar ficheiro manual...");
-                    Papa.parse(manualFileContent, {
-                        header: false, skipEmptyLines: true,
-                        complete: (res) => {
-                            processData(res.data);
-                            setStatus("Offline - Dados Carregados Manualmente");
-                        }
-                    });
-                    return;
-                }
-
-                if (!API_KEY || API_KEY === "SUA_API_KEY_AQUI") {
-                    setStatus("Chave de API ausente. Utilize a Carga Manual (CSV) ou insira a chave no código.");
-                    setLoading(false);
-                    return;
-                }
-
-                try {
-                    setStatus("A transferir dados via API Google...");
-                    const response = await fetch(API_URL);
-                    if (!response.ok) {
-                        let errMsg = response.statusText;
-                        try {
-                            const errData = await response.json();
-                            if (errData && errData.error && errData.error.message) {
-                                errMsg = errData.error.message;
-                            }
-                        } catch(e) {}
-                        setStatus(`API Bloqueada (${errMsg}). Utilize a Carga Manual (CSV).`);
-                        setLoading(false);
-                        return;
-                    }
-                    const json = await response.json();
-                    processData(json.values);
-                    setStatus("Online - Dados Sincronizados com Sucesso");
-                    
-                } catch (error) { 
-                    setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV)."); 
-                    setLoading(false); 
-                }
-            };
-
-            useEffect(() => { loadData(); }, []);
-
-            const filteredData = useMemo(() => {
-                let filtered = rawData.filter(item => {
-                    const matchUg = fUg.length === 0 || fUg.includes(item.ug);
-                    const matchFav = fFavorecido.length === 0 || fFavorecido.includes(item.favorecido);
-                    const matchEmpenho = fEmpenho.length === 0 || fEmpenho.includes(item.empenho);
-                    const matchDoc = fDocumento.length === 0 || fDocumento.includes(item.documento);
-                    const matchContrato = fContrato.length === 0 || fContrato.includes(item.contrato);
-                    
-                    const matchDiaDe = !dDiaDe || (item.diaVal && item.diaVal >= new Date(dDiaDe+"T00:00:00").getTime());
-                    const matchDiaAte = !dDiaAte || (item.diaVal && item.diaVal <= new Date(dDiaAte+"T23:59:59").getTime());
-
-                    const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase());
-                    const searchUgNomeMatch = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
-                    const searchEmpenhoMatch = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
-                    const searchDocumentoMatch = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
-                    const searchObsMatch = !searchObs || item.obs.includes(searchObs.toUpperCase());
-
-                    let matchNum = true;
-                    for (const key in numFilters) {
-                        if (numFilters[key].min !== '' && item[key] < parseFloat(numFilters[key].min)) { matchNum = false; break; }
-                        if (numFilters[key].max !== '' && item[key] > parseFloat(numFilters[key].max)) { matchNum = false; break; }
-                    }
-
-                    const matchBloqueado = !fOnlyBloqueado || item.v_bloqueado !== 0;
-                    const matchCancelado = !fOnlyCancelado || item.v_cancelado !== 0;
-
-                    return matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
-                           matchDiaDe && matchDiaAte && searchContratoTabelaMatch && searchUgNomeMatch && searchEmpenhoMatch && 
-                           searchDocumentoMatch && searchObsMatch && matchNum && matchBloqueado && matchCancelado;
-                });
-
-                if (sortConfig.key) {
-                    filtered.sort((a, b) => {
-                        let valA = a[sortConfig.key];
-                        let valB = b[sortConfig.key];
-                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-                        return 0;
-                    });
-                }
-                return filtered;
-            }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
-
-            const kpis = useMemo(() => {
-                let totalEmpenhado = 0;
-                let totalRecebido = 0;
-                let totalLiquidado = 0;
-                let totalPago = 0;
-                let totalCancelado = 0;
-                let totalBloqueado = 0;
-                const uniqueContratos = new Set(); 
-
-                filteredData.forEach(item => {
-                    totalEmpenhado += item.v_empenhado;
-                    totalRecebido += item.v_recebido;
-                    totalLiquidado += item.v_liquidado;
-                    totalPago += item.v_pago;
-                    totalCancelado += item.v_cancelado;
-                    totalBloqueado += item.v_bloqueado;
-                    
-                    if (item.contrato && item.contrato.trim() !== "" && item.contrato !== "-") {
-                        uniqueContratos.add(item.contrato.trim());
-                    }
-                });
-
-                return {
-                    qtdContratos: uniqueContratos.size,
-                    totalEmpenhado,
-                    totalRecebido, percRecebido: totalEmpenhado ? (totalRecebido / totalEmpenhado) : 0,
-                    totalLiquidado, percLiquidado: totalEmpenhado ? (totalLiquidado / totalEmpenhado) : 0,
-                    totalPago, percPago: totalEmpenhado ? (totalPago / totalEmpenhado) : 0,
-                    totalCancelado, percCancelado: totalEmpenhado ? (totalCancelado / totalEmpenhado) : 0,
-                    totalBloqueado, percBloqueado: totalEmpenhado ? (totalBloqueado / totalEmpenhado) : 0
-                };
-            }, [filteredData]);
-
-            const getChartData = (keyName) => {
-                const map = {};
-                filteredData.forEach(item => {
-                    const k = item[keyName];
-                    if (!map[k]) map[k] = { label: k, empenhado: 0, recebido: 0, liquidado: 0, pago: 0, cancelado: 0, bloqueado: 0 };
-                    map[k].empenhado += item.v_empenhado;
-                    map[k].recebido += item.v_recebido;
-                    map[k].liquidado += item.v_liquidado;
-                    map[k].pago += item.v_pago;
-                    map[k].cancelado += item.v_cancelado;
-                    map[k].bloqueado += item.v_bloqueado;
-                });
-                return Object.values(map);
-            };
-
-            const dataByContrato = getChartData('contrato').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
-            const dataByFavorecido = getChartData('favorecido').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
-
-            // =========================================================
-            // DADOS PARA OS NOVOS GRÁFICOS E KPIS
-            // =========================================================
-            const latestDocs = useMemo(() => {
-                const getLatest = (field) => {
-                    const validDocs = filteredData.filter(d => d[field] !== 0);
-                    if (validDocs.length === 0) return null;
-                    return validDocs.sort((a, b) => b.diaVal - a.diaVal)[0];
-                };
-                return {
-                    empenhado: getLatest('v_empenhado'),
-                    recebido: getLatest('v_recebido'),
-                    liquidado: getLatest('v_liquidado'),
-                    pago: getLatest('v_pago')
-                };
-            }, [filteredData]);
-
-            const docCounts = useMemo(() => {
-                const uniqueDocs = (field) => new Set(filteredData.filter(d => d[field] !== 0).map(d => d.documento)).size;
-                return {
-                    empenhado: uniqueDocs('v_empenhado'),
-                    recebido: uniqueDocs('v_recebido'),
-                    liquidado: uniqueDocs('v_liquidado'),
-                    pago: uniqueDocs('v_pago')
-                };
-            }, [filteredData]);
-
-            const volumeData = [
-                { label: 'EMPENHADO', value: kpis.totalEmpenhado, color: 'bg-blue-500' },
-                { label: 'RECEBIDO', value: kpis.totalRecebido, color: 'bg-violet-500' },
-                { label: 'LIQUIDADO', value: kpis.totalLiquidado, color: 'bg-amber-500' },
-                { label: 'PAGO', value: kpis.totalPago, color: 'bg-emerald-500' }
-            ];
-
-            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
-
-            const chartConfigOptions = (dataArray) => ({
-                indexAxis: 'x', 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                plugins: { 
-                    tooltip: {
-                        callbacks: {
-                            title: function(tooltipItems) { return dataArray[tooltipItems[0].dataIndex].label; },
-                            label: function(context) { return (context.dataset.label || '') + ': ' + formatBRL(context.raw); }
-                        }
-                    },
-                    datalabels: {
-                        display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
-                        color: '#ffffff',
-                        rotation: -90,
-                        font: { weight: 'bold', size: 9 },
-                        formatter: (value) => shortenNumber(value),
-                        anchor: 'center',
-                        align: 'center',
-                        textStrokeColor: 'rgba(0,0,0,0.5)',
-                        textStrokeWidth: 2
-                    }
-                },
-                scales: { 
-                    x: { 
-                        ticks: { font: { size: 9 }, maxRotation: 45, minRotation: 45 } 
-                    }, 
-                    y: { ticks: { callback: v => shortenNumber(v) } } 
-                }
-            });
-
-            const doughnutOptionsDocs = {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    tooltip: { callbacks: { label: function(ctx) { return ` Qtd Documentos: ${ctx.raw}`; } } },
-                    datalabels: {
-                        color: '#ffffff',
-                        font: { weight: 'bold', size: 10 },
-                        formatter: (value, ctx) => {
-                            let sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
-                            if (sum === 0 || value === 0) return null; 
-                            return (value * 100 / sum).toFixed(1) + '%';
-                        },
-                        textStrokeColor: 'rgba(0,0,0,0.6)',
-                        textStrokeWidth: 2
-                    },
-                    legend: { display: false }
-                }
-            };
-
-            const exportMasterColumns = [
-                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
-                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
-                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
-                { header: "OBS", key: "obs" }, { header: "EMPENHADO", key: "v_empenhado", isCurrency: true },
-                { header: "RECEBIDO", key: "v_recebido", isCurrency: true }, { header: "LIQUIDADO", key: "v_liquidado", isCurrency: true },
-                { header: "PAGO", key: "v_pago", isCurrency: true }, { header: "CANCELADO", key: "v_cancelado", isCurrency: true },
-                { header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true }
-            ];
-
-            if (loading) return (
-                <div className="h-screen flex flex-col items-center justify-center font-black text-slate-400 gap-4">
-                    <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-800 rounded-full animate-spin"></div>
-                    <p className="tracking-widest">A ESTRUTURAR DADOS...</p>
-                </div>
-            );
-
-            return (
-                <div className="p-4 md:p-8">
-                    {/* CABEÇALHO */}
-                    <header className="max-w-[1600px] mx-auto mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <div>
-                            <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-800">PAINEL DE DOCUMENTOS CONTÁBEIS DOS CONTRATOS</h1>
-                            <p className={`text-[11px] font-bold mt-1 ${status.includes("Erro") || status.includes("falhou") || status.includes("ausente") || status.includes("Bloqueada") ? "text-red-600" : "text-emerald-600"}`}>
-                                ● {status}
-                            </p>
-                        </div>
-                        <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-lg border shadow-sm">
-                            <span className="text-[10px] font-black text-slate-400 uppercase">Carga Manual (CSV):</span>
-                            <input type="file" accept=".csv" onChange={(e) => {
-                                const r = new FileReader();
-                                r.onload = (ev) => loadData(ev.target.result);
-                                r.readAsText(e.target.files[0]);
-                            }} className="text-xs cursor-pointer text-blue-600 font-bold w-[200px]" />
-                        </div>
-                    </header>
-
-                    <div className="max-w-[1600px] mx-auto mb-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-                        
-                        <h2 className="text-xs font-black uppercase tracking-widest text-[#99bbd4] mb-2">Filtros Dinâmicos</h2>
-                        
-                        <div className="flex flex-col items-start gap-1 w-full mb-4">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Status Especiais e Ações Rápidas:</span>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <button onClick={() => setFOnlyBloqueado(!fOnlyBloqueado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyBloqueado ? 'bg-orange-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
-                                    Valores Bloqueados
-                                </button>
-                                <button onClick={() => setFOnlyCancelado(!fOnlyCancelado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyCancelado ? 'bg-red-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
-                                    Valores Cancelados
-                                </button>
-                                <div className="w-[2px] h-5 bg-slate-300 mx-1 rounded"></div>
-                                <button onClick={applyFilterAcessoHoje} className="text-[10px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 transition shadow-sm">
-                                    Hoje
-                                </button>
-                                <button onClick={clearAllFilters} className="text-[10px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition shadow-sm">
-                                    Limpar Todos os Filtros
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                            <MultiSelect label="UG CÓDIGO" options={[...new Set(rawData.map(r => r.ug))].sort()} selected={fUg} onChange={setFUg} />
-                            <MultiSelect label="FAVORECIDO" options={[...new Set(rawData.map(r => r.favorecido))].sort()} selected={fFavorecido} onChange={setFFavorecido} />
-                            <MultiSelect label="EMPENHO" options={[...new Set(rawData.map(r => r.empenho))].sort()} selected={fEmpenho} onChange={setFEmpenho} />
-                            <MultiSelect label="DOCUMENTO" options={[...new Set(rawData.map(r => r.documento))].sort()} selected={fDocumento} onChange={setFDocumento} />
-                            <MultiSelect label="CONTRATO" options={[...new Set(rawData.map(r => r.contrato))].sort()} selected={fContrato} onChange={setFContrato} />
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                            <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
-                            <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
-                        </div>
-                    </div>
-
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
-                        <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
-                        <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
-                        <KPICard title="Recebido" value={kpis.totalRecebido} subValue={kpis.percRecebido} color="violet" isCurrency={true} />
-                        <KPICard title="Liquidado" value={kpis.totalLiquidado} subValue={kpis.percLiquidado} color="amber" isCurrency={true} />
-                        <KPICard title="Pago" value={kpis.totalPago} subValue={kpis.percPago} color="emerald" isCurrency={true} />
-                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} color="red" isCurrency={true} />
-                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} color="orange" isCurrency={true} />
-                    </div>
-
-                    {/* NOVA SESSÃO: ROSCAS E ÚLTIMOS DOCUMENTOS */}
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                        {/* Gráficos de Composição */}
-                        <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Composição de Documentos</h3>
-                            <div className="flex flex-col gap-6 h-full justify-between pb-4">
-                                <div className="h-[200px]">
-                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">QTD DE DOCUMENTOS ÚNICOS</h4>
-                                    <ChartComponent id="doughnutQtd" type="doughnut" data={{
-                                        labels: ['Empenhado', 'Recebido', 'Liquidado', 'Pago'],
-                                        datasets: [{
-                                            data: [docCounts.empenhado, docCounts.recebido, docCounts.liquidado, docCounts.pago],
-                                            backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
-                                        }]
-                                    }} options={doughnutOptionsDocs} />
-                                </div>
-                                <div className="h-[280px] pt-4">
-                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">VOLUME FINANCEIRO TOTAL (R$)</h4>
-                                    <FunnelChart data={volumeData} />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Últimos Documentos */}
-                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Últimos Lançamentos (Recentes)</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-30px)]">
-                                <LatestDocCard title="Último Documento: EMPENHADO" doc={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
-                                <LatestDocCard title="Último Documento: RECEBIDO" doc={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
-                                <LatestDocCard title="Último Documento: LIQUIDADO" doc={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
-                                <LatestDocCard title="Último Documento: PAGO" doc={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* GRÁFICOS PARTE 1 */}
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 gap-8 mb-8">
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por CONTRATO (Top 20)</h3>
-                            <div className="h-[400px]">
-                                <ChartComponent id="chartContratoPrincipal" type="bar" data={{
-                                    labels: dataByContrato.map(d => formatLabelSingleLine(d.label)),
-                                    datasets: [
-                                        { label: '01_TOTAL_EMPENHADO', data: dataByContrato.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
-                                        { label: '02_TOTAL_RECEBIDO', data: dataByContrato.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
-                                        { label: '03_TOTAL_LIQUIDADO', data: dataByContrato.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
-                                        { label: '04_TOTAL_PAGO', data: dataByContrato.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
-                                    ]
-                                }} options={chartConfigOptions(dataByContrato)} />
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por FAVORECIDO (Top 20)</h3>
-                            <div className="h-[400px]">
-                                <ChartComponent id="chartFavorecidoPrincipal" type="bar" data={{
-                                    labels: dataByFavorecido.map(d => formatLabelSingleLine(d.label)),
-                                    datasets: [
-                                        { label: '01_TOTAL_EMPENHADO', data: dataByFavorecido.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
-                                        { label: '02_TOTAL_RECEBIDO', data: dataByFavorecido.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
-                                        { label: '03_TOTAL_LIQUIDADO', data: dataByFavorecido.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
-                                        { label: '04_TOTAL_PAGO', data: dataByFavorecido.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
-                                    ]
-                                }} options={chartConfigOptions(dataByFavorecido)} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* GRÁFICOS PARTE 2 */}
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por CONTRATO</h3>
-                            <div className="h-[350px]">
-                                <ChartComponent id="chartContratoSec" type="bar" data={{
-                                    labels: dataByContrato.map(d => formatLabelSingleLine(d.label)),
-                                    datasets: [
-                                        { label: '05_TOTAL_CANCELADO', data: dataByContrato.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
-                                        { label: '06_TOTAL_BLOQUEADO', data: dataByContrato.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
-                                    ]
-                                }} options={chartConfigOptions(dataByContrato)} />
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por FAVORECIDO</h3>
-                            <div className="h-[350px]">
-                                <ChartComponent id="chartFavorecidoSec" type="bar" data={{
-                                    labels: dataByFavorecido.map(d => formatLabelSingleLine(d.label)),
-                                    datasets: [
-                                        { label: '05_TOTAL_CANCELADO', data: dataByFavorecido.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
-                                        { label: '06_TOTAL_BLOQUEADO', data: dataByFavorecido.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
-                                    ]
-                                }} options={chartConfigOptions(dataByFavorecido)} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* TABELA DE DADOS MASTER COM EXPORTAÇÃO */}
-                    <div className="max-w-[1600px] mx-auto bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-10">
-                        <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
-                            <h3 className="text-white text-xs font-black tracking-widest uppercase">Detalhamento Financeiro Master (Mostrando {Math.min(visibleRows, filteredData.length)} de {filteredData.length})</h3>
-                            <div className="flex gap-2">
-                                <button onClick={() => exportTable.toExcel(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
-                                <button onClick={() => exportTable.toCSV(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
-                                <button onClick={() => exportTable.toPDF(filteredData, "Detalhamento_Master", exportMasterColumns, "DETALHAMENTO FINANCEIRO MASTER")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
-                            </div>
-                        </div>
-                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                            <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
-                                <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
-                                    <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                        <TextHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
-                                        <TextHeader widthClass="w-[8%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
-                                        <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
-                                        <TextHeader widthClass="w-[12%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
-                                        <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
-                                        <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
-                                        <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
-                                        
-                                        <NumericHeader widthClass="w-[6%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                        <NumericHeader widthClass="w-[6%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                        <NumericHeader widthClass="w-[6%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                        <NumericHeader widthClass="w-[6%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                        <NumericHeader widthClass="w-[6%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                        <NumericHeader widthClass="w-[6%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filteredData.slice(0, visibleRows).map((row, i) => (
-                                        <tr key={i} className="hover:bg-blue-50 transition-colors">
-                                            <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
-                                            <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                            <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
-                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
-                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
-                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
-                                            <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
-                                            
-                                            <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30">{formatBRL(row.v_empenhado)}</td>
-                                            <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words">{formatBRL(row.v_recebido)}</td>
-                                            <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30">{formatBRL(row.v_liquidado)}</td>
-                                            <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words">{formatBRL(row.v_pago)}</td>
-                                            <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30">{formatBRL(row.v_cancelado)}</td>
-                                            <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words">{formatBRL(row.v_bloqueado)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        {visibleRows < filteredData.length && (
-                            <div className="p-4 bg-slate-50 border-t flex justify-center">
-                                <button 
-                                    onClick={() => setVisibleRows(prev => prev + 100)}
-                                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-6 py-2 rounded transition"
-                                >
-                                    Carregar mais registros (+100)
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* NOVAS SUB-TABELAS ESPECÍFICAS (COM EXPORTAÇÃO INDIVIDUAL) */}
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-                        <SubTable title="Detalhamento - Empenhado" data={filteredData} metricField="v_empenhado" metricLabel="EMPENHADO" headerColor="bg-blue-800" textColor="text-blue-700" rowBgColor="bg-blue-50/30" />
-                        <SubTable title="Detalhamento - Recebido" data={filteredData} metricField="v_recebido" metricLabel="RECEBIDO" headerColor="bg-violet-800" textColor="text-violet-700" rowBgColor="" />
-                        <SubTable title="Detalhamento - Liquidado" data={filteredData} metricField="v_liquidado" metricLabel="LIQUIDADO" headerColor="bg-amber-700" textColor="text-amber-700" rowBgColor="bg-amber-50/30" />
-                        <SubTable title="Detalhamento - Pago" data={filteredData} metricField="v_pago" metricLabel="PAGO" headerColor="bg-emerald-800" textColor="text-emerald-700" rowBgColor="" />
-                        <SubTable title="Detalhamento - Cancelado" data={filteredData} metricField="v_cancelado" metricLabel="CANCELADO" headerColor="bg-red-800" textColor="text-red-700" rowBgColor="bg-red-50/30" />
-                        <SubTable title="Detalhamento - Bloqueado" data={filteredData} metricField="v_bloqueado" metricLabel="BLOQUEADO" headerColor="bg-orange-800" textColor="text-orange-700" rowBgColor="" />
-                    </div>
-                </div>
-            );
-        }
-
-        // =========================================================
-        // COMPONENTE DE LOGIN (APP RAIZ)
-        // =========================================================
-        function App() {
-            const [isAuthenticated, setIsAuthenticated] = useState(false);
-            const [username, setUsername] = useState("");
-            const [password, setPassword] = useState("");
-            const [error, setError] = useState("");
-
-            const handleLogin = (e) => {
-                e.preventDefault();
-                const users = {};
-                users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
-                users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
-                users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
-                users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
-                users[_decode("01100010 01101111 01110101 01101100 01100101 01110110 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
-
-                const inputUser = username.toLowerCase().trim();
-                if (users[inputUser] && users[inputUser] === password) {
-                    setIsAuthenticated(true);
-                    setError("");
-                } else {
-                    setError("Credenciais inválidas. Verifique o usuário e a senha.");
-                }
-            };
-
-            if (!isAuthenticated) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-slate-800 relative overflow-hidden">
-                        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-                        <div className="bg-white p-8 rounded-2xl shadow-2xl w-[400px] max-w-[90%] border-t-8 border-blue-600 relative z-10">
-                            <div className="text-center mb-8">
-                                <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Acesso Restrito</h1>
-                                <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">Painel de Documentos Contábeis</p>
-                            </div>
-                            <form onSubmit={handleLogin} className="space-y-5">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
-                                    <input 
-                                        type="text" 
-                                        value={username} 
-                                        onChange={e => setUsername(e.target.value)} 
-                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
-                                        placeholder="Digite o seu usuário..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
-                                    <input 
-                                        type="password" 
-                                        value={password} 
-                                        onChange={e => setPassword(e.target.value)} 
-                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
-                                        placeholder="••••••••"
-                                    />
-                                </div>
-                                {error && (
-                                    <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
-                                        <p className="text-[11px] font-bold text-red-600 text-center">{error}</p>
-                                    </div>
-                                )}
-                                <button 
-                                    type="submit" 
-                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2"
-                                >
-                                    Autenticar Acesso
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                );
-            }
-
-            return <Dashboard />;
         }
 
         // =========================================================
@@ -1309,6 +507,1025 @@
                     </div>
                 </div>
             );
+        }
+
+        // =========================================================
+        // SUB-TABELAS COM EXPORTAÇÃO E TOTAIS
+        // =========================================================
+        function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor }) {
+            const [limit, setLimit] = useState(100);
+            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
+            
+            const [searchContrato, setSearchContrato] = useState(""); 
+            const [searchUgNome, setSearchUgNome] = useState(""); 
+            const [searchEmpenho, setSearchEmpenho] = useState("");
+            const [searchDocumento, setSearchDocumento] = useState("");
+            const [searchObs, setSearchObs] = useState("");
+            const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''} });
+
+            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+
+            const tableData = useMemo(() => {
+                let filtered = data.filter(row => row[metricField] !== 0);
+
+                filtered = filtered.filter(item => {
+                    const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
+                    const matchUgNome = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
+                    const matchEmpenho = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
+                    const matchDocumento = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
+                    const matchObs = !searchObs || item.obs.includes(searchObs.toUpperCase());
+
+                    let matchNum = true;
+                    if (numFilters[metricField]) {
+                        if (numFilters[metricField].min !== '' && item[metricField] < parseFloat(numFilters[metricField].min)) matchNum = false;
+                        if (numFilters[metricField].max !== '' && item[metricField] > parseFloat(numFilters[metricField].max)) matchNum = false;
+                    }
+                    return matchContrato && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum;
+                });
+
+                if (sortConfig.key) {
+                    filtered.sort((a, b) => {
+                        let valA = a[sortConfig.key];
+                        let valB = b[sortConfig.key];
+                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return filtered;
+            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
+            
+            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
+
+            // Cálculo do total geral da SubTabela
+            const totalMetric = useMemo(() => {
+                return tableData.reduce((acc, curr) => acc + curr[metricField], 0);
+            }, [tableData, metricField]);
+
+            const exportColumns = [
+                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
+                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
+                { header: "OBS", key: "obs" },
+                { header: metricLabel, key: metricField, isCurrency: true }
+            ];
+
+            return (
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col h-[500px]">
+                    <div className={`${headerColor} px-4 py-3 flex justify-between items-center flex-wrap gap-2`}>
+                        <h3 className="text-white text-xs font-black tracking-widest uppercase">{title} ({tableData.length})</h3>
+                        <div className="flex gap-2">
+                            <button onClick={() => exportTable.toExcel(tableData, title, exportColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                            <button onClick={() => exportTable.toCSV(tableData, title, exportColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                            <button onClick={() => exportTable.toPDF(tableData, title, exportColumns, title.toUpperCase())} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto overflow-y-auto flex-1">
+                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
+                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
+                                    <TextHeader widthClass="w-[8%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[10%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
+                                    <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[18%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                    <TextHeader widthClass="w-[10%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                    <TextHeader widthClass="w-[10%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
+                                    <TextHeader widthClass="w-[22%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
+                                    <NumericHeader widthClass="w-[16%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {tableData.slice(0, limit).map((row, i) => (
+                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
+                                        <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
+                                        <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
+                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
+                                        <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
+                                        <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
+                                            {formatBRL(row[metricField])}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
+                                <tr className="text-slate-700 uppercase font-black">
+                                    <td colSpan="7" className="p-2 text-right">TOTAL DA MÉTRICA:</td>
+                                    <td className={`p-2 text-right ${textColor}`}>{formatBRL(totalMetric)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {limit < tableData.length && (
+                        <div className="p-2 bg-slate-50 border-t flex justify-center">
+                            <button 
+                                onClick={() => setLimit(prev => prev + 100)}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] px-4 py-1 rounded transition"
+                            >
+                                Ver mais (+100)
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // =========================================================
+        // DASHBOARD MASTER (ESTRUTURA DE DADOS E GRAFICOS)
+        // =========================================================
+        function Dashboard() {
+            const [rawData, setRawData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [status, setStatus] = useState("Verificando sessão local...");
+            const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
+            
+            const [fUg, setFUg] = useState([]);
+            const [fFavorecido, setFFavorecido] = useState([]);
+            const [fEmpenho, setFEmpenho] = useState([]);
+            const [fDocumento, setFDocumento] = useState([]);
+            const [fContrato, setFContrato] = useState([]);
+            const [dDiaDe, setDDiaDe] = useState("");
+            const [dDiaAte, setDDiaAte] = useState("");
+
+            const [searchContratoTabela, setSearchContratoTabela] = useState("");
+            const [searchUgNome, setSearchUgNome] = useState(""); 
+            const [searchEmpenho, setSearchEmpenho] = useState("");
+            const [searchDocumento, setSearchDocumento] = useState("");
+            const [searchObs, setSearchObs] = useState("");
+
+            // Estados Especiais
+            const [fOnlyBloqueado, setFOnlyBloqueado] = useState(false);
+            const [fOnlyCancelado, setFOnlyCancelado] = useState(false);
+
+            const [visibleRows, setVisibleRows] = useState(100);
+
+            const initialNumFilters = {
+                v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
+                v_liquidado: {min:'', max:''}, v_pago: {min:'', max:''},
+                v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''}
+            };
+            const [numFilters, setNumFilters] = useState(initialNumFilters);
+
+            useEffect(() => { setVisibleRows(100); }, [fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
+
+            const clearAllFilters = () => {
+                setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
+                setDDiaDe(""); setDDiaAte("");
+                setSearchContratoTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs("");
+                setNumFilters(initialNumFilters);
+                setFOnlyBloqueado(false);
+                setFOnlyCancelado(false);
+            };
+
+            const applyFilterAcessoHoje = () => {
+                const today = new Date();
+                const yyyy = today.getFullYear();
+                const mm = String(today.getMonth() + 1).padStart(2, '0');
+                const dd = String(today.getDate()).padStart(2, '0');
+                setDDiaDe(`${yyyy}-${mm}-${dd}`);
+                setDDiaAte(""); 
+            };
+
+            const logout = () => {
+                try {
+                    localStorage.removeItem('isAuth_Contabil');
+                    localStorage.removeItem('dashData_Contabil');
+                } catch(e) {}
+                window.location.reload();
+            };
+
+            const processData = (rowsArray, fromCache = false) => {
+                if (!rowsArray || rowsArray.length < 2) {
+                    setStatus("Planilha vazia ou sem dados válidos.");
+                    setLoading(false);
+                    return;
+                }
+
+                setStatus("A estruturar matriz de dados...");
+                const headers = rowsArray[0];
+                const hMap = {};
+                headers.forEach((h, i) => { if(h) hMap[normalizeStr(h)] = i; });
+
+                const getVal = (exactNames, fallbackKeywords, row) => {
+                    for (let name of exactNames) {
+                        let n = normalizeStr(name);
+                        if (hMap[n] !== undefined) {
+                            let v = row[hMap[n]];
+                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
+                        }
+                    }
+                    for (let kw of fallbackKeywords) {
+                        let nKw = normalizeStr(kw);
+                        let foundKey = Object.keys(hMap).find(k => k.includes(nKw));
+                        if (foundKey) {
+                            let v = row[hMap[foundKey]];
+                            return (v !== undefined && v !== null) ? v.toString().trim() : "";
+                        }
+                    }
+                    return "";
+                };
+
+                const grouped = {};
+
+                for (let i = 1; i < rowsArray.length; i++) {
+                    const row = rowsArray[i];
+                    if (!row || row.length === 0) continue;
+                    
+                    const dia = getVal(["Emissão - Dia Data Completa", "Emissao"], ["emissao", "dia", "data"], row);
+                    const ug = getVal(["Emitente - UG Código", "UG Codigo"], ["ug codigo", "emitente"], row).toUpperCase();
+                    const fav = getVal(["Favorecido Doc. Nome", "Favorecido"], ["favorecido", "doc. nome"], row).toUpperCase();
+                    const empenho = getVal(["Documento CCor Número"], ["ccor", "empenho"], row).toUpperCase();
+                    const doc = getVal(["Documento Número"], ["documento numero", "doc numero"], row).toUpperCase();
+                    const obs = getVal(["Doc - Observação Texto", "Observação"], ["observacao", "obs"], row).toUpperCase();
+                    const contrato = getVal(["COL_NR_CONTR_BASE", "Contrato"], ["contr_base", "contrato"], row).toUpperCase();
+                    
+                    let info = getVal(["ITEM_INFORMACAO", "INTEN_INFORMACAO", "Informacao"], ["informacao", "item_in", "inten_in"], row).toUpperCase();
+                    let valStr = getVal(["Valor Item (R$)", "Valor (R$)", "Valor"], ["valor", "vlr", "r$", "montante", "saldo"], row);
+                    
+                    if (!info) {
+                        const rowStr = row.join(" ").toUpperCase();
+                        if (rowStr.includes("EMPENHADO")) info = "EMPENHADO";
+                        else if (rowStr.includes("RECEBIDO")) info = "RECEBIDO";
+                        else if (rowStr.includes("LIQUIDADO")) info = "LIQUIDADO";
+                        else if (rowStr.includes("PAGO")) info = "PAGO";
+                        else if (rowStr.includes("CANCELADO")) info = "CANCELADO";
+                        else if (rowStr.includes("BLOQUEADO")) info = "BLOQUEADO";
+                    }
+
+                    if (!valStr && row.length > 0) {
+                        for(let c = row.length - 1; c >= 0; c--) {
+                            let t = parseValue(row[c]);
+                            if (t !== 0) { valStr = row[c]; break; }
+                        }
+                    }
+
+                    const valor = parseValue(valStr);
+                    const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
+
+                    if (!grouped[key]) {
+                        grouped[key] = {
+                            dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
+                            ug, favorecido: fav, empenho, documento: doc, obs, contrato,
+                            v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0
+                        };
+                    }
+
+                    if (info.includes("EMPENHADO")) grouped[key].v_empenhado += valor;
+                    else if (info.includes("RECEBIDO")) grouped[key].v_recebido += valor;
+                    else if (info.includes("LIQUIDADO")) grouped[key].v_liquidado += valor;
+                    else if (info.includes("PAGO")) grouped[key].v_pago += valor;
+                    else if (info.includes("CANCELADO")) grouped[key].v_cancelado += valor;
+                    else if (info.includes("BLOQUEADO")) grouped[key].v_bloqueado += valor;
+                }
+                
+                const finalData = Object.values(grouped);
+                setRawData(finalData);
+                
+                if (!fromCache) {
+                    try {
+                        localStorage.removeItem('dashData_Contabil');
+                        localStorage.setItem('dashData_Contabil', JSON.stringify(finalData));
+                    } catch(e) {
+                        console.warn("Aviso: Limite de armazenamento local excedido. Os dados não puderam ser guardados no cache.");
+                    }
+                }
+                setLoading(false);
+            };
+
+            const loadData = async (forceSync = false, manualFileContent = null) => {
+                setLoading(true);
+                
+                if (manualFileContent) {
+                    setStatus("A processar ficheiro manual...");
+                    Papa.parse(manualFileContent, {
+                        header: false, skipEmptyLines: true,
+                        complete: (res) => {
+                            processData(res.data);
+                            setStatus("Offline - Dados Carregados Manualmente");
+                        }
+                    });
+                    return;
+                }
+
+                if (!forceSync) {
+                    try {
+                        const cachedData = localStorage.getItem('dashData_Contabil');
+                        if (cachedData) {
+                            const parsedCache = JSON.parse(cachedData);
+                            setRawData(parsedCache);
+                            setStatus("Online - Dados Carregados da Memória Local (Use SINCRONIZAR para atualizar)");
+                            setLoading(false);
+                            return;
+                        }
+                    } catch(e) {
+                        console.warn("Cache local indisponível ou inválido, a iniciar sincronização com a API...");
+                    }
+                }
+
+                if (!API_KEY || API_KEY === "SUA_API_KEY_AQUI") {
+                    setStatus("Chave de API ausente. Utilize a Carga Manual (CSV) ou insira a chave no código.");
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    setStatus("A transferir dados via API Google...");
+                    const response = await fetch(API_URL);
+                    if (!response.ok) {
+                        let errMsg = response.statusText;
+                        try {
+                            const errData = await response.json();
+                            if (errData && errData.error && errData.error.message) {
+                                errMsg = errData.error.message;
+                            }
+                        } catch(e) {}
+                        setStatus(`API Bloqueada (${errMsg}). Utilize a Carga Manual (CSV).`);
+                        setLoading(false);
+                        return;
+                    }
+                    const json = await response.json();
+                    processData(json.values, false);
+                    setStatus("Online - Dados Sincronizados com Sucesso");
+                    
+                } catch (error) { 
+                    setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV) ou Cache Local."); 
+                    setLoading(false); 
+                }
+            };
+
+            useEffect(() => { loadData(); }, []);
+
+            const filteredData = useMemo(() => {
+                let filtered = rawData.filter(item => {
+                    const matchUg = fUg.length === 0 || fUg.includes(item.ug);
+                    const matchFav = fFavorecido.length === 0 || fFavorecido.includes(item.favorecido);
+                    const matchEmpenho = fEmpenho.length === 0 || fEmpenho.includes(item.empenho);
+                    const matchDoc = fDocumento.length === 0 || fDocumento.includes(item.documento);
+                    const matchContrato = fContrato.length === 0 || fContrato.includes(item.contrato);
+                    
+                    const matchDiaDe = !dDiaDe || (item.diaVal && item.diaVal >= new Date(dDiaDe+"T00:00:00").getTime());
+                    const matchDiaAte = !dDiaAte || (item.diaVal && item.diaVal <= new Date(dDiaAte+"T23:59:59").getTime());
+
+                    const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase());
+                    const searchUgNomeMatch = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
+                    const searchEmpenhoMatch = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
+                    const searchDocumentoMatch = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
+                    const searchObsMatch = !searchObs || item.obs.includes(searchObs.toUpperCase());
+
+                    let matchNum = true;
+                    for (const key in numFilters) {
+                        if (numFilters[key].min !== '' && item[key] < parseFloat(numFilters[key].min)) { matchNum = false; break; }
+                        if (numFilters[key].max !== '' && item[key] > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                    }
+
+                    const matchBloqueado = !fOnlyBloqueado || item.v_bloqueado !== 0;
+                    const matchCancelado = !fOnlyCancelado || item.v_cancelado !== 0;
+
+                    return matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
+                           matchDiaDe && matchDiaAte && searchContratoTabelaMatch && searchUgNomeMatch && searchEmpenhoMatch && 
+                           searchDocumentoMatch && searchObsMatch && matchNum && matchBloqueado && matchCancelado;
+                });
+
+                if (sortConfig.key) {
+                    filtered.sort((a, b) => {
+                        let valA = a[sortConfig.key];
+                        let valB = b[sortConfig.key];
+                        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return filtered;
+            }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
+
+            // Totais da Tabela Master (dinâmicos conforme os filtros)
+            const totalsMaster = useMemo(() => {
+                let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
+                filteredData.forEach(r => {
+                    emp += r.v_empenhado;
+                    rec += r.v_recebido;
+                    liq += r.v_liquidado;
+                    pag += r.v_pago;
+                    can += r.v_cancelado;
+                    blo += r.v_bloqueado;
+                });
+                return { emp, rec, liq, pag, can, blo };
+            }, [filteredData]);
+
+            const kpis = useMemo(() => {
+                let totalEmpenhado = 0;
+                let totalRecebido = 0;
+                let totalLiquidado = 0;
+                let totalPago = 0;
+                let totalCancelado = 0;
+                let totalBloqueado = 0;
+                const uniqueContratos = new Set(); 
+
+                filteredData.forEach(item => {
+                    totalEmpenhado += item.v_empenhado;
+                    totalRecebido += item.v_recebido;
+                    totalLiquidado += item.v_liquidado;
+                    totalPago += item.v_pago;
+                    totalCancelado += item.v_cancelado;
+                    totalBloqueado += item.v_bloqueado;
+                    
+                    if (item.contrato && item.contrato.trim() !== "" && item.contrato !== "-") {
+                        uniqueContratos.add(item.contrato.trim());
+                    }
+                });
+
+                return {
+                    qtdContratos: uniqueContratos.size,
+                    totalEmpenhado,
+                    totalRecebido, percRecebido: totalEmpenhado ? (totalRecebido / totalEmpenhado) : 0,
+                    totalLiquidado, percLiquidado: totalEmpenhado ? (totalLiquidado / totalEmpenhado) : 0,
+                    totalPago, percPago: totalEmpenhado ? (totalPago / totalEmpenhado) : 0,
+                    totalCancelado, percCancelado: totalEmpenhado ? (totalCancelado / totalEmpenhado) : 0,
+                    totalBloqueado, percBloqueado: totalEmpenhado ? (totalBloqueado / totalEmpenhado) : 0
+                };
+            }, [filteredData]);
+
+            const getChartData = (keyName) => {
+                const map = {};
+                filteredData.forEach(item => {
+                    const k = item[keyName];
+                    if (!map[k]) map[k] = { label: k, empenhado: 0, recebido: 0, liquidado: 0, pago: 0, cancelado: 0, bloqueado: 0 };
+                    map[k].empenhado += item.v_empenhado;
+                    map[k].recebido += item.v_recebido;
+                    map[k].liquidado += item.v_liquidado;
+                    map[k].pago += item.v_pago;
+                    map[k].cancelado += item.v_cancelado;
+                    map[k].bloqueado += item.v_bloqueado;
+                });
+                return Object.values(map);
+            };
+
+            const dataByContrato = getChartData('contrato').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
+            const dataByFavorecido = getChartData('favorecido').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
+
+            // Lógica de "Safra/Cohort" baseada no primeiro documento NE ou RO do contrato
+            const dataByYear = useMemo(() => {
+                const contratoAnoOrigem = {};
+                
+                filteredData.forEach(item => {
+                    if (!item.diaVal || !item.contrato || item.contrato === "-") return;
+                    
+                    const doc = item.documento ? item.documento.toUpperCase() : "";
+                    if (doc.includes("NE") || doc.includes("RO")) {
+                        if (!contratoAnoOrigem[item.contrato] || item.diaVal < contratoAnoOrigem[item.contrato].minDate) {
+                            contratoAnoOrigem[item.contrato] = {
+                                minDate: item.diaVal,
+                                ano: new Date(item.diaVal).getFullYear()
+                            };
+                        }
+                    }
+                });
+
+                const map = {};
+                
+                filteredData.forEach(item => {
+                    if (!item.contrato || item.contrato === "-") return;
+                    
+                    const origem = contratoAnoOrigem[item.contrato];
+                    if (!origem) return; 
+
+                    const ano = origem.ano;
+                    if (!map[ano]) {
+                        map[ano] = { label: ano.toString(), contratos: new Set(), total_empenhado: 0 };
+                    }
+                    
+                    map[ano].contratos.add(item.contrato);
+                    map[ano].total_empenhado += item.v_empenhado;
+                });
+                
+                return Object.values(map).map(d => ({
+                    label: d.label,
+                    qtd_contratos: d.contratos.size,
+                    v_empenhado: d.total_empenhado
+                })).sort((a, b) => parseInt(a.label) - parseInt(b.label)); 
+            }, [filteredData]);
+
+            // =========================================================
+            // DADOS PARA OS NOVOS GRÁFICOS E KPIS
+            // =========================================================
+            const latestDocs = useMemo(() => {
+                const getLatest = (field) => {
+                    const validDocs = filteredData.filter(d => d[field] !== 0);
+                    if (validDocs.length === 0) return null;
+                    return validDocs.sort((a, b) => b.diaVal - a.diaVal)[0];
+                };
+                return {
+                    empenhado: getLatest('v_empenhado'),
+                    recebido: getLatest('v_recebido'),
+                    liquidado: getLatest('v_liquidado'),
+                    pago: getLatest('v_pago')
+                };
+            }, [filteredData]);
+
+            const docCounts = useMemo(() => {
+                const uniqueDocs = (field) => new Set(filteredData.filter(d => d[field] !== 0).map(d => d.documento)).size;
+                return {
+                    empenhado: uniqueDocs('v_empenhado'),
+                    recebido: uniqueDocs('v_recebido'),
+                    liquidado: uniqueDocs('v_liquidado'),
+                    pago: uniqueDocs('v_pago')
+                };
+            }, [filteredData]);
+
+            const volumeData = [
+                { label: 'EMPENHADO', value: kpis.totalEmpenhado, color: 'bg-blue-500' },
+                { label: 'RECEBIDO', value: kpis.totalRecebido, color: 'bg-violet-500' },
+                { label: 'LIQUIDADO', value: kpis.totalLiquidado, color: 'bg-amber-500' },
+                { label: 'PAGO', value: kpis.totalPago, color: 'bg-emerald-500' }
+            ];
+
+            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+
+            const chartConfigOptions = (dataArray) => ({
+                indexAxis: 'x', 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { 
+                    tooltip: {
+                        callbacks: {
+                            title: function(tooltipItems) { return dataArray[tooltipItems[0].dataIndex].label; },
+                            label: function(context) { return (context.dataset.label || '') + ': ' + formatBRL(context.raw); }
+                        }
+                    },
+                    datalabels: {
+                        display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
+                        color: '#ffffff',
+                        rotation: -90,
+                        font: { weight: 'bold', size: 9 },
+                        formatter: (value) => shortenNumber(value),
+                        anchor: 'center',
+                        align: 'center',
+                        textStrokeColor: 'rgba(0,0,0,0.5)',
+                        textStrokeWidth: 2
+                    }
+                },
+                scales: { 
+                    x: { 
+                        ticks: { 
+                            font: { size: 9 }, 
+                            maxRotation: 90, 
+                            minRotation: 45, 
+                            autoSkip: false 
+                        } 
+                    }, 
+                    y: { ticks: { callback: v => shortenNumber(v) } } 
+                }
+            });
+
+            const doughnutOptionsDocs = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: { callbacks: { label: function(ctx) { return ` Qtd Documentos: ${ctx.raw}`; } } },
+                    datalabels: {
+                        color: '#ffffff',
+                        font: { weight: 'bold', size: 10 },
+                        formatter: (value, ctx) => {
+                            let sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                            if (sum === 0 || value === 0) return null; 
+                            return (value * 100 / sum).toFixed(1) + '%';
+                        },
+                        textStrokeColor: 'rgba(0,0,0,0.6)',
+                        textStrokeWidth: 2
+                    },
+                    legend: { display: false }
+                }
+            };
+
+            const exportMasterColumns = [
+                { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
+                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
+                { header: "OBS", key: "obs" }, { header: "EMPENHADO", key: "v_empenhado", isCurrency: true },
+                { header: "RECEBIDO", key: "v_recebido", isCurrency: true }, { header: "LIQUIDADO", key: "v_liquidado", isCurrency: true },
+                { header: "PAGO", key: "v_pago", isCurrency: true }, { header: "CANCELADO", key: "v_cancelado", isCurrency: true },
+                { header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true }
+            ];
+
+            if (loading) return (
+                <div className="h-screen flex flex-col items-center justify-center font-black text-slate-400 gap-4">
+                    <div className="w-12 h-12 border-4 border-slate-300 border-t-slate-800 rounded-full animate-spin"></div>
+                    <p className="tracking-widest">A ESTRUTURAR DADOS...</p>
+                </div>
+            );
+
+            return (
+                <div className="p-4 md:p-8">
+                    {/* CABEÇALHO */}
+                    <header className="max-w-[1600px] mx-auto mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-800">PAINEL DE DOCUMENTOS CONTÁBEIS DOS CONTRATOS</h1>
+                            <p className={`text-[11px] font-bold mt-1 ${status.includes("Erro") || status.includes("falhou") || status.includes("ausente") || status.includes("Bloqueada") ? "text-red-600" : "text-emerald-600"}`}>
+                                ● {status}
+                            </p>
+                        </div>
+                        <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-lg border shadow-sm">
+                            <span className="text-[10px] font-black text-slate-400 uppercase">Carga Manual:</span>
+                            <input type="file" accept=".csv" onChange={(e) => {
+                                const r = new FileReader();
+                                r.onload = (ev) => loadData(false, ev.target.result);
+                                r.readAsText(e.target.files[0]);
+                            }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
+                            <div className="w-[1px] h-6 bg-slate-300 mx-1"></div>
+                            <button onClick={() => loadData(true)} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition flex items-center gap-1">
+                                SINCRONIZAR API
+                            </button>
+                            <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition flex items-center gap-1">
+                                SAIR
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="max-w-[1600px] mx-auto mb-6 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        
+                        <h2 className="text-xs font-black uppercase tracking-widest text-[#99bbd4] mb-2">Filtros Dinâmicos</h2>
+                        
+                        <div className="flex flex-col items-start gap-1 w-full mb-4">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Status Especiais e Ações Rápidas:</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button onClick={() => setFOnlyBloqueado(!fOnlyBloqueado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyBloqueado ? 'bg-orange-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                                    Valores Bloqueados
+                                </button>
+                                <button onClick={() => setFOnlyCancelado(!fOnlyCancelado)} className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm ${fOnlyCancelado ? 'bg-red-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                                    Valores Cancelados
+                                </button>
+                                <div className="w-[2px] h-5 bg-slate-300 mx-1 rounded"></div>
+                                <button onClick={applyFilterAcessoHoje} className="text-[10px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 transition shadow-sm">
+                                    Hoje
+                                </button>
+                                <button onClick={clearAllFilters} className="text-[10px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition shadow-sm">
+                                    Limpar Todos os Filtros
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                            <MultiSelect label="UG CÓDIGO" options={[...new Set(rawData.map(r => r.ug))].sort()} selected={fUg} onChange={setFUg} />
+                            <MultiSelect label="FAVORECIDO" options={[...new Set(rawData.map(r => r.favorecido))].sort()} selected={fFavorecido} onChange={setFFavorecido} />
+                            <MultiSelect label="EMPENHO" options={[...new Set(rawData.map(r => r.empenho))].sort()} selected={fEmpenho} onChange={setFEmpenho} />
+                            <MultiSelect label="DOCUMENTO" options={[...new Set(rawData.map(r => r.documento))].sort()} selected={fDocumento} onChange={setFDocumento} />
+                            <MultiSelect label="CONTRATO" options={[...new Set(rawData.map(r => r.contrato))].sort()} selected={fContrato} onChange={setFContrato} />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                            <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
+                            <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
+                        </div>
+                    </div>
+
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+                        <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
+                        <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                        <KPICard title="Recebido" value={kpis.totalRecebido} subValue={kpis.percRecebido} color="violet" isCurrency={true} />
+                        <KPICard title="Liquidado" value={kpis.totalLiquidado} subValue={kpis.percLiquidado} color="amber" isCurrency={true} />
+                        <KPICard title="Pago" value={kpis.totalPago} subValue={kpis.percPago} color="emerald" isCurrency={true} />
+                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} color="red" isCurrency={true} />
+                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} color="orange" isCurrency={true} />
+                    </div>
+
+                    {/* NOVA SESSÃO: ROSCAS E ÚLTIMOS DOCUMENTOS */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                        {/* Gráficos de Composição */}
+                        <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Composição de Documentos</h3>
+                            <div className="flex flex-col gap-6 h-full justify-between pb-4">
+                                <div className="h-[200px]">
+                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">QTD DE DOCUMENTOS ÚNICOS</h4>
+                                    <ChartComponent id="doughnutQtd" type="doughnut" data={{
+                                        labels: ['Empenhado', 'Recebido', 'Liquidado', 'Pago'],
+                                        datasets: [{
+                                            data: [docCounts.empenhado, docCounts.recebido, docCounts.liquidado, docCounts.pago],
+                                            backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
+                                        }]
+                                    }} options={doughnutOptionsDocs} />
+                                </div>
+                                <div className="h-[280px] pt-4">
+                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">VOLUME FINANCEIRO TOTAL (R$)</h4>
+                                    <FunnelChart data={volumeData} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Últimos Documentos */}
+                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Últimos Lançamentos (Recentes)</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-30px)]">
+                                <LatestDocCard title="Último Documento: EMPENHADO" doc={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
+                                <LatestDocCard title="Último Documento: RECEBIDO" doc={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
+                                <LatestDocCard title="Último Documento: LIQUIDADO" doc={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
+                                <LatestDocCard title="Último Documento: PAGO" doc={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* GRÁFICOS PARTE 1 */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 gap-8 mb-8">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por CONTRATO (Top 20)</h3>
+                            <div className="h-[400px]">
+                                <ChartComponent id="chartContratoPrincipal" type="bar" data={{
+                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '01_TOTAL_EMPENHADO', data: dataByContrato.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
+                                        { label: '02_TOTAL_RECEBIDO', data: dataByContrato.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
+                                        { label: '03_TOTAL_LIQUIDADO', data: dataByContrato.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
+                                        { label: '04_TOTAL_PAGO', data: dataByContrato.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByContrato)} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Métricas por FAVORECIDO (Top 20)</h3>
+                            <div className="h-[400px]">
+                                <ChartComponent id="chartFavorecidoPrincipal" type="bar" data={{
+                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '01_TOTAL_EMPENHADO', data: dataByFavorecido.map(d => d.empenhado), backgroundColor: '#3b82f6', borderRadius: 4 },
+                                        { label: '02_TOTAL_RECEBIDO', data: dataByFavorecido.map(d => d.recebido), backgroundColor: '#8b5cf6', borderRadius: 4 },
+                                        { label: '03_TOTAL_LIQUIDADO', data: dataByFavorecido.map(d => d.liquidado), backgroundColor: '#f59e0b', borderRadius: 4 },
+                                        { label: '04_TOTAL_PAGO', data: dataByFavorecido.map(d => d.pago), backgroundColor: '#10b981', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByFavorecido)} />
+                            </div>
+                        </div>
+
+                        {/* NOVO: GRÁFICO POR ANO (COM DOIS EIXOS) */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Evolução por Ano (Empenhado vs Contratos Únicos)</h3>
+                            <div className="h-[400px]">
+                                <ChartComponent id="chartEvolucaoAno" type="bar" data={{
+                                    labels: dataByYear.map(d => d.label),
+                                    datasets: [
+                                        { 
+                                            label: 'Qtd. Contratos Únicos', 
+                                            data: dataByYear.map(d => d.qtd_contratos), 
+                                            backgroundColor: '#f97316', 
+                                            yAxisID: 'y_qtd',
+                                            borderRadius: 4,
+                                            datalabels: {
+                                                display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
+                                                color: '#1e293b',
+                                                anchor: 'end', align: 'start', offset: 4, clip: true,
+                                                rotation: -90,
+                                                font: { size: 9, weight: 'bold' },
+                                                formatter: v => v
+                                            }
+                                        },
+                                        { 
+                                            label: 'Valor Empenhado', 
+                                            data: dataByYear.map(d => d.v_empenhado), 
+                                            backgroundColor: '#3b82f6', 
+                                            yAxisID: 'y_val',
+                                            borderRadius: 4,
+                                            datalabels: {
+                                                display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
+                                                color: '#fff',
+                                                anchor: 'center', align: 'center', offset: 0, clip: true,
+                                                rotation: -90,
+                                                font: { size: 9, weight: 'bold' },
+                                                formatter: v => shortenNumber(v),
+                                                textStrokeColor: 'rgba(0,0,0,0.5)',
+                                                textStrokeWidth: 2
+                                            }
+                                        }
+                                    ]
+                                }} options={{ 
+                                    indexAxis: 'x', 
+                                    responsive: true, 
+                                    maintainAspectRatio: false, 
+                                    plugins: { 
+                                        tooltip: {
+                                            callbacks: {
+                                                label: function(context) {
+                                                    let val = context.raw;
+                                                    if (context.dataset.yAxisID === 'y_val') return context.dataset.label + ': ' + formatBRL(val);
+                                                    return context.dataset.label + ': ' + val.toLocaleString('pt-BR');
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: { 
+                                        x: { 
+                                            ticks: { 
+                                                font: { size: 10, weight: 'bold' },
+                                                maxRotation: 90,
+                                                minRotation: 0,
+                                                autoSkip: false
+                                            } 
+                                        }, 
+                                        y_val: { type: 'linear', position: 'left', ticks: { callback: v => shortenNumber(v) } },
+                                        y_qtd: { type: 'linear', position: 'right', grid: { display: false } }
+                                    } 
+                                }} />
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* GRÁFICOS PARTE 2 */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por CONTRATO</h3>
+                            <div className="h-[350px]">
+                                <ChartComponent id="chartContratoSec" type="bar" data={{
+                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '05_TOTAL_CANCELADO', data: dataByContrato.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
+                                        { label: '06_TOTAL_BLOQUEADO', data: dataByContrato.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByContrato)} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por FAVORECIDO</h3>
+                            <div className="h-[350px]">
+                                <ChartComponent id="chartFavorecidoSec" type="bar" data={{
+                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                                    datasets: [
+                                        { label: '05_TOTAL_CANCELADO', data: dataByFavorecido.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
+                                        { label: '06_TOTAL_BLOQUEADO', data: dataByFavorecido.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                    ]
+                                }} options={chartConfigOptions(dataByFavorecido)} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* TABELA DE DADOS MASTER COM EXPORTAÇÃO */}
+                    <div className="max-w-[1600px] mx-auto bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-10">
+                        <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
+                            <h3 className="text-white text-xs font-black tracking-widest uppercase">Detalhamento Financeiro Master (Mostrando {Math.min(visibleRows, filteredData.length)} de {filteredData.length})</h3>
+                            <div className="flex gap-2">
+                                <button onClick={() => exportTable.toExcel(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                                <button onClick={() => exportTable.toCSV(filteredData, "Detalhamento_Master", exportMasterColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                                <button onClick={() => exportTable.toPDF(filteredData, "Detalhamento_Master", exportMasterColumns, "DETALHAMENTO FINANCEIRO MASTER")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                            <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
+                                <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                    <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
+                                        <TextHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                        <TextHeader widthClass="w-[8%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
+                                        <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
+                                        <TextHeader widthClass="w-[12%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                        <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
+                                        <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
+                                        <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
+                                        
+                                        <NumericHeader widthClass="w-[6%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                        <NumericHeader widthClass="w-[6%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredData.slice(0, visibleRows).map((row, i) => (
+                                        <tr key={i} className="hover:bg-blue-50 transition-colors">
+                                            <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
+                                            <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
+                                            <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
+                                            <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
+                                            <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
+                                            
+                                            <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30">{formatBRL(row.v_empenhado)}</td>
+                                            <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words">{formatBRL(row.v_recebido)}</td>
+                                            <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30">{formatBRL(row.v_liquidado)}</td>
+                                            <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words">{formatBRL(row.v_pago)}</td>
+                                            <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30">{formatBRL(row.v_cancelado)}</td>
+                                            <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words">{formatBRL(row.v_bloqueado)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
+                                    <tr className="text-slate-700 uppercase font-black">
+                                        <td colSpan="7" className="p-2 text-right">TOTAIS (Filtro Atual):</td>
+                                        <td className="p-2 text-right text-blue-800">{formatBRL(totalsMaster.emp)}</td>
+                                        <td className="p-2 text-right text-violet-800">{formatBRL(totalsMaster.rec)}</td>
+                                        <td className="p-2 text-right text-amber-800">{formatBRL(totalsMaster.liq)}</td>
+                                        <td className="p-2 text-right text-emerald-800">{formatBRL(totalsMaster.pag)}</td>
+                                        <td className="p-2 text-right text-red-800">{formatBRL(totalsMaster.can)}</td>
+                                        <td className="p-2 text-right text-orange-800">{formatBRL(totalsMaster.blo)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        {visibleRows < filteredData.length && (
+                            <div className="p-4 bg-slate-50 border-t flex justify-center">
+                                <button 
+                                    onClick={() => setVisibleRows(prev => prev + 100)}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-6 py-2 rounded transition"
+                                >
+                                    Carregar mais registros (+100)
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* NOVAS SUB-TABELAS ESPECÍFICAS (COM EXPORTAÇÃO INDIVIDUAL) */}
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                        <SubTable title="Detalhamento - Empenhado" data={filteredData} metricField="v_empenhado" metricLabel="EMPENHADO" headerColor="bg-blue-800" textColor="text-blue-700" rowBgColor="bg-blue-50/30" />
+                        <SubTable title="Detalhamento - Recebido" data={filteredData} metricField="v_recebido" metricLabel="RECEBIDO" headerColor="bg-violet-800" textColor="text-violet-700" rowBgColor="" />
+                        <SubTable title="Detalhamento - Liquidado" data={filteredData} metricField="v_liquidado" metricLabel="LIQUIDADO" headerColor="bg-amber-700" textColor="text-amber-700" rowBgColor="bg-amber-50/30" />
+                        <SubTable title="Detalhamento - Pago" data={filteredData} metricField="v_pago" metricLabel="PAGO" headerColor="bg-emerald-800" textColor="text-emerald-700" rowBgColor="" />
+                        <SubTable title="Detalhamento - Cancelado" data={filteredData} metricField="v_cancelado" metricLabel="CANCELADO" headerColor="bg-red-800" textColor="text-red-700" rowBgColor="bg-red-50/30" />
+                        <SubTable title="Detalhamento - Bloqueado" data={filteredData} metricField="v_bloqueado" metricLabel="BLOQUEADO" headerColor="bg-orange-800" textColor="text-orange-700" rowBgColor="" />
+                    </div>
+                </div>
+            );
+        }
+
+        // =========================================================
+        // COMPONENTE DE LOGIN (APP RAIZ)
+        // =========================================================
+        function App() {
+            // Inicializa a autenticação lendo do LocalStorage (Sessão persistente)
+            const [isAuthenticated, setIsAuthenticated] = useState(() => {
+                try { return localStorage.getItem('isAuth_Contabil') === 'true'; } 
+                catch(e) { return false; }
+            });
+            const [username, setUsername] = useState("");
+            const [password, setPassword] = useState("");
+            const [error, setError] = useState("");
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                const users = {};
+                users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
+                users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
+                users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
+                users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
+                users[_decode("01100010 01101111 01110101 01101100 01100101 01110111 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
+
+                const inputUser = username.toLowerCase().trim();
+                if (users[inputUser] && users[inputUser] === password) {
+                    setIsAuthenticated(true);
+                    try { localStorage.setItem('isAuth_Contabil', 'true'); } catch(e) {}
+                    setError("");
+                } else {
+                    setError("Credenciais inválidas. Verifique o usuário e a senha.");
+                }
+            };
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-800 relative overflow-hidden">
+                        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+                        <div className="bg-white p-8 rounded-2xl shadow-2xl w-[400px] max-w-[90%] border-t-8 border-blue-600 relative z-10">
+                            <div className="text-center mb-8">
+                                <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Acesso Restrito</h1>
+                                <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">Painel de Documentos Contábeis</p>
+                            </div>
+                            <form onSubmit={handleLogin} className="space-y-5">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
+                                    <input 
+                                        type="text" 
+                                        value={username} 
+                                        onChange={e => setUsername(e.target.value)} 
+                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
+                                        placeholder="Digite o seu usuário..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
+                                    <input 
+                                        type="password" 
+                                        value={password} 
+                                        onChange={e => setPassword(e.target.value)} 
+                                        className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" 
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                                {error && (
+                                    <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                                        <p className="text-[11px] font-bold text-red-600 text-center">{error}</p>
+                                    </div>
+                                )}
+                                <button 
+                                    type="submit" 
+                                    className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2"
+                                >
+                                    Autenticar Acesso
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return <Dashboard />;
         }
 
         ReactDOM.render(<App />, document.getElementById('root'));
