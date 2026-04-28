@@ -1228,23 +1228,23 @@
                             <MultiSelect label="CONTRATO" options={[...new Set(rawData.map(r => r.contrato))].sort()} selected={fContrato} onChange={setFContrato} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                            <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
-                            <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
-                        </div>
+                        <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
+                        <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
                     </div>
+                </div>
 
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
-                        <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
-                        <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
-                        <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif (Emp-Rcb): ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Empenhado" color="violet" isCurrency={true} />
-                        <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif (Emp-Liq): ${formatBRL(kpis.totalEmpenhado - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Empenhado" color="amber" isCurrency={true} />
-                        <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif (Emp-Pag): ${formatBRL(kpis.totalEmpenhado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Empenhado" color="emerald" isCurrency={true} />
-                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} percSuffix=" do Empenhado" color="red" isCurrency={true} />
-                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
-                    </div>
+                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
+                    <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
+                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                    <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif (Emp-Rcb): ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Empenhado" color="violet" isCurrency={true} />
+                    <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif (Rcb-Liq): ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Empenhado" color="amber" isCurrency={true} />
+                    <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif (Liq-Pag): ${formatBRL(kpis.totalLiquidado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Empenhado" color="emerald" isCurrency={true} />
+                    <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} percSuffix=" do Empenhado" color="red" isCurrency={true} />
+                    <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
+                </div>
 
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                        <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
+                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
                         <DocStatCard title="Docs NS ou NL" count={docStats.nsnl.count} date={docStats.nsnl.latestDate} />
                         <DocStatCard title="Docs OB" count={docStats.ob.count} date={docStats.ob.latestDate} />
                         <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} />
