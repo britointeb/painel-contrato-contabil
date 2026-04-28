@@ -106,7 +106,6 @@
             return new Date(dStr);
         };
 
-        // Formatação de labels com quebra de linha (array de strings) para o Chart.js
         const formatLabelMultiLine = (text) => {
             if (!text) return [""];
             let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
@@ -130,6 +129,13 @@
                 return [lines[0], lines[1].substring(0, 15) + '...'];
             }
             return lines;
+        };
+
+        const formatLabelSingleLine = (text) => {
+            if (!text) return "";
+            let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
+            if (cleanText.length > 25) return cleanText.substring(0, 25) + '...';
+            return cleanText;
         };
 
         const startResize = (e) => {
@@ -320,10 +326,6 @@
             );
         }
 
-        // =========================================================
-        // SUB-COMPONENTES DE UI DA TABELA
-        // =========================================================
-
         function TextHeader({ label, field, current, onSort, align="left", searchVal, onSearchChange, widthClass }) {
             const isSorted = current.key === field;
             return (
@@ -482,7 +484,7 @@
             );
         }
 
-        function KPICard({ title, value, subValue, color, isCurrency }) {
+        function KPICard({ title, value, subValue, diffText, percSuffix, color, isCurrency }) {
             const colors = {
                 slate: "border-slate-800 text-slate-800",
                 blue: "border-blue-500 text-blue-700",
@@ -494,17 +496,30 @@
             };
             
             const mainText = isCurrency ? formatBRL(value) : value.toLocaleString('pt-BR');
-            const subText = subValue !== undefined ? `(${formatPercentBR(subValue)})` : '';
+            const subText = subValue !== undefined ? `${formatPercentBR(subValue)}${percSuffix || ''}` : '';
 
             return (
                 <div className={`bg-white p-3 sm:p-4 rounded-2xl border-t-8 shadow-md flex flex-col justify-center overflow-hidden min-w-0 ${colors[color]}`}>
                     <h3 className="text-[9px] font-black uppercase tracking-widest opacity-50 mb-1 truncate" title={title}>{title}</h3>
                     <div className="flex flex-col w-full min-w-0">
                         <AutoFitText text={mainText} className="font-black text-xl sm:text-2xl tracking-tight" />
+                        {diffText && (
+                            <div className="text-[9px] sm:text-[10px] font-bold opacity-70 mt-1 truncate">{diffText}</div>
+                        )}
                         {subValue !== undefined && (
-                            <div className="text-[10px] sm:text-xs font-bold opacity-80 mt-1 truncate">{subText}</div>
+                            <div className="text-[10px] sm:text-xs font-bold opacity-90 mt-0.5 truncate">{subText}</div>
                         )}
                     </div>
+                </div>
+            );
+        }
+
+        function DocStatCard({ title, count, date }) {
+            return (
+                <div className="bg-white p-3 sm:p-4 rounded-2xl border-t-4 border-slate-400 shadow-md flex flex-col justify-center overflow-hidden min-w-0">
+                    <h3 className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1 truncate" title={title}>{title}</h3>
+                    <div className="font-black text-xl sm:text-2xl tracking-tight text-slate-800">{count.toLocaleString('pt-BR')}</div>
+                    <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase">Último: {date || '-'}</div>
                 </div>
             );
         }
@@ -526,7 +541,9 @@
             const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
 
             const tableData = useMemo(() => {
-                let filtered = data.filter(row => row[metricField] !== 0);
+                // Modificação Crucial: Em vez de filtrar valores != 0, filtramos se a linha *tem* a métrica preenchida.
+                const hasField = metricField.replace('v_', 'has_');
+                let filtered = data.filter(row => row[hasField]);
 
                 filtered = filtered.filter(item => {
                     const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
@@ -557,7 +574,6 @@
             
             useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
 
-            // Cálculo do total geral da SubTabela
             const totalMetric = useMemo(() => {
                 return tableData.reduce((acc, curr) => acc + curr[metricField], 0);
             }, [tableData, metricField]);
@@ -638,7 +654,7 @@
         function Dashboard() {
             const [rawData, setRawData] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [status, setStatus] = useState("Verificando sessão local...");
+            const [status, setStatus] = useState("A processar conexão...");
             const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
             
             const [fUg, setFUg] = useState([]);
@@ -679,24 +695,37 @@
                 setFOnlyCancelado(false);
             };
 
-            const applyFilterAcessoHoje = () => {
-                const today = new Date();
-                const yyyy = today.getFullYear();
-                const mm = String(today.getMonth() + 1).padStart(2, '0');
-                const dd = String(today.getDate()).padStart(2, '0');
-                setDDiaDe(`${yyyy}-${mm}-${dd}`);
-                setDDiaAte(""); 
+            const maxDateInfo = useMemo(() => {
+                if (!rawData || rawData.length === 0) return { val: null, str: "", iso: "" };
+                let maxVal = -1;
+                let maxStr = "";
+                let maxIso = "";
+                rawData.forEach(item => {
+                    if (item.diaVal > maxVal) {
+                        maxVal = item.diaVal;
+                        maxStr = item.dia; 
+                        const d = new Date(item.diaVal);
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        maxIso = `${yyyy}-${mm}-${dd}`;
+                    }
+                });
+                return { val: maxVal, str: maxStr, iso: maxIso };
+            }, [rawData]);
+
+            const applyFilterUltimoDia = () => {
+                if (maxDateInfo.iso) {
+                    setDDiaDe(maxDateInfo.iso);
+                    setDDiaAte(maxDateInfo.iso); 
+                }
             };
 
             const logout = () => {
-                try {
-                    localStorage.removeItem('isAuth_Contabil');
-                    localStorage.removeItem('dashData_Contabil');
-                } catch(e) {}
                 window.location.reload();
             };
 
-            const processData = (rowsArray, fromCache = false) => {
+            const processData = (rowsArray) => {
                 if (!rowsArray || rowsArray.length < 2) {
                     setStatus("Planilha vazia ou sem dados válidos.");
                     setLoading(false);
@@ -744,6 +773,7 @@
                     let info = getVal(["ITEM_INFORMACAO", "INTEN_INFORMACAO", "Informacao"], ["informacao", "item_in", "inten_in"], row).toUpperCase();
                     let valStr = getVal(["Valor Item (R$)", "Valor (R$)", "Valor"], ["valor", "vlr", "r$", "montante", "saldo"], row);
                     
+                    // Lógica para Inferir se Info estava em branco
                     if (!info) {
                         const rowStr = row.join(" ").toUpperCase();
                         if (rowStr.includes("EMPENHADO")) info = "EMPENHADO";
@@ -765,36 +795,29 @@
                     const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
 
                     if (!grouped[key]) {
+                        // Flags 'has_' servem para identificar que a métrica existe para aquele documento, mesmo com valor = 0
                         grouped[key] = {
                             dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
                             ug, favorecido: fav, empenho, documento: doc, obs, contrato,
-                            v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0
+                            v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0,
+                            has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false
                         };
                     }
 
-                    if (info.includes("EMPENHADO")) grouped[key].v_empenhado += valor;
-                    else if (info.includes("RECEBIDO")) grouped[key].v_recebido += valor;
-                    else if (info.includes("LIQUIDADO")) grouped[key].v_liquidado += valor;
-                    else if (info.includes("PAGO")) grouped[key].v_pago += valor;
-                    else if (info.includes("CANCELADO")) grouped[key].v_cancelado += valor;
-                    else if (info.includes("BLOQUEADO")) grouped[key].v_bloqueado += valor;
+                    if (info.includes("EMPENHADO")) { grouped[key].v_empenhado += valor; grouped[key].has_empenhado = true; }
+                    else if (info.includes("RECEBIDO")) { grouped[key].v_recebido += valor; grouped[key].has_recebido = true; }
+                    else if (info.includes("LIQUIDADO")) { grouped[key].v_liquidado += valor; grouped[key].has_liquidado = true; }
+                    else if (info.includes("PAGO")) { grouped[key].v_pago += valor; grouped[key].has_pago = true; }
+                    else if (info.includes("CANCELADO")) { grouped[key].v_cancelado += valor; grouped[key].has_cancelado = true; }
+                    else if (info.includes("BLOQUEADO")) { grouped[key].v_bloqueado += valor; grouped[key].has_bloqueado = true; }
                 }
                 
                 const finalData = Object.values(grouped);
                 setRawData(finalData);
-                
-                if (!fromCache) {
-                    try {
-                        localStorage.removeItem('dashData_Contabil');
-                        localStorage.setItem('dashData_Contabil', JSON.stringify(finalData));
-                    } catch(e) {
-                        console.warn("Aviso: Limite de armazenamento local excedido. Os dados não puderam ser guardados no cache.");
-                    }
-                }
                 setLoading(false);
             };
 
-            const loadData = async (forceSync = false, manualFileContent = null) => {
+            const loadData = async (manualFileContent = null) => {
                 setLoading(true);
                 
                 if (manualFileContent) {
@@ -807,21 +830,6 @@
                         }
                     });
                     return;
-                }
-
-                if (!forceSync) {
-                    try {
-                        const cachedData = localStorage.getItem('dashData_Contabil');
-                        if (cachedData) {
-                            const parsedCache = JSON.parse(cachedData);
-                            setRawData(parsedCache);
-                            setStatus("Online - Dados Carregados da Memória Local (Use SINCRONIZAR para atualizar)");
-                            setLoading(false);
-                            return;
-                        }
-                    } catch(e) {
-                        console.warn("Cache local indisponível ou inválido, a iniciar sincronização com a API...");
-                    }
                 }
 
                 if (!API_KEY || API_KEY === "SUA_API_KEY_AQUI") {
@@ -846,11 +854,11 @@
                         return;
                     }
                     const json = await response.json();
-                    processData(json.values, false);
+                    processData(json.values);
                     setStatus("Online - Dados Sincronizados com Sucesso");
                     
                 } catch (error) { 
-                    setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV) ou Cache Local."); 
+                    setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV)."); 
                     setLoading(false); 
                 }
             };
@@ -880,8 +888,10 @@
                         if (numFilters[key].max !== '' && item[key] > parseFloat(numFilters[key].max)) { matchNum = false; break; }
                     }
 
-                    const matchBloqueado = !fOnlyBloqueado || item.v_bloqueado !== 0;
-                    const matchCancelado = !fOnlyCancelado || item.v_cancelado !== 0;
+                    // Modificação: em vez de !fOnlyBloqueado || item.v_bloqueado !== 0,
+                    // validamos se tem_bloqueado (linha que afirma existir bloqueio), independentemente se é zero!
+                    const matchBloqueado = !fOnlyBloqueado || item.has_bloqueado;
+                    const matchCancelado = !fOnlyCancelado || item.has_cancelado;
 
                     return matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
                            matchDiaDe && matchDiaAte && searchContratoTabelaMatch && searchUgNomeMatch && searchEmpenhoMatch && 
@@ -900,7 +910,6 @@
                 return filtered;
             }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
 
-            // Totais da Tabela Master (dinâmicos conforme os filtros)
             const totalsMaster = useMemo(() => {
                 let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
                 filteredData.forEach(r => {
@@ -965,7 +974,6 @@
             const dataByContrato = getChartData('contrato').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
             const dataByFavorecido = getChartData('favorecido').sort((a,b) => b.empenhado - a.empenhado).slice(0, 20);
 
-            // Lógica de "Safra/Cohort" baseada no primeiro documento NE ou RO do contrato
             const dataByYear = useMemo(() => {
                 const contratoAnoOrigem = {};
                 
@@ -1007,12 +1015,11 @@
                 })).sort((a, b) => parseInt(a.label) - parseInt(b.label)); 
             }, [filteredData]);
 
-            // =========================================================
-            // DADOS PARA OS NOVOS GRÁFICOS E KPIS
-            // =========================================================
             const latestDocs = useMemo(() => {
                 const getLatest = (field) => {
-                    const validDocs = filteredData.filter(d => d[field] !== 0);
+                    // Validamos se o documento tem a métrica sinalizada pela presença da flag 'has_'
+                    const hasField = field.replace('v_', 'has_');
+                    const validDocs = filteredData.filter(d => d[hasField]);
                     if (validDocs.length === 0) return null;
                     return validDocs.sort((a, b) => b.diaVal - a.diaVal)[0];
                 };
@@ -1025,12 +1032,58 @@
             }, [filteredData]);
 
             const docCounts = useMemo(() => {
-                const uniqueDocs = (field) => new Set(filteredData.filter(d => d[field] !== 0).map(d => d.documento)).size;
+                const uniqueDocs = (field) => {
+                    const hasField = field.replace('v_', 'has_');
+                    return new Set(filteredData.filter(d => d[hasField]).map(d => d.documento)).size;
+                };
                 return {
                     empenhado: uniqueDocs('v_empenhado'),
                     recebido: uniqueDocs('v_recebido'),
                     liquidado: uniqueDocs('v_liquidado'),
                     pago: uniqueDocs('v_pago')
+                };
+            }, [filteredData]);
+
+            const totalUniqueDocs = useMemo(() => {
+                const unique = new Set();
+                filteredData.forEach(d => {
+                    if (d.documento && d.documento !== "-") unique.add(d.documento);
+                });
+                return unique.size;
+            }, [filteredData]);
+
+            const docStats = useMemo(() => {
+                const stats = {
+                    rone: { latestDate: null, latestVal: 0, set: new Set() },
+                    nsnl: { latestDate: null, latestVal: 0, set: new Set() },
+                    ob: { latestDate: null, latestVal: 0, set: new Set() },
+                    df: { latestDate: null, latestVal: 0, set: new Set() }
+                };
+
+                filteredData.forEach(item => {
+                    if (!item.documento || item.documento === "-") return;
+                    const doc = item.documento.toUpperCase();
+                    
+                    let target = null;
+                    if (doc.includes('RO') || doc.includes('NE')) target = stats.rone;
+                    else if (doc.includes('NS') || doc.includes('NL')) target = stats.nsnl;
+                    else if (doc.includes('OB')) target = stats.ob;
+                    else if (doc.includes('DF')) target = stats.df;
+
+                    if (target) {
+                        target.set.add(doc);
+                        if (!target.latestVal || item.diaVal > target.latestVal) {
+                            target.latestVal = item.diaVal;
+                            target.latestDate = item.dia;
+                        }
+                    }
+                });
+
+                return {
+                    rone: { count: stats.rone.set.size, latestDate: stats.rone.latestDate },
+                    nsnl: { count: stats.nsnl.set.size, latestDate: stats.nsnl.latestDate },
+                    ob: { count: stats.ob.set.size, latestDate: stats.ob.latestDate },
+                    df: { count: stats.df.set.size, latestDate: stats.df.latestDate }
                 };
             }, [filteredData]);
 
@@ -1082,6 +1135,7 @@
             const doughnutOptionsDocs = {
                 responsive: true,
                 maintainAspectRatio: false,
+                cutout: '65%',
                 plugins: {
                     tooltip: { callbacks: { label: function(ctx) { return ` Qtd Documentos: ${ctx.raw}`; } } },
                     datalabels: {
@@ -1134,7 +1188,7 @@
                                 r.readAsText(e.target.files[0]);
                             }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
                             <div className="w-[1px] h-6 bg-slate-300 mx-1"></div>
-                            <button onClick={() => loadData(true)} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition flex items-center gap-1">
+                            <button onClick={() => loadData()} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition flex items-center gap-1">
                                 SINCRONIZAR API
                             </button>
                             <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition flex items-center gap-1">
@@ -1157,8 +1211,8 @@
                                     Valores Cancelados
                                 </button>
                                 <div className="w-[2px] h-5 bg-slate-300 mx-1 rounded"></div>
-                                <button onClick={applyFilterAcessoHoje} className="text-[10px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 transition shadow-sm">
-                                    Hoje
+                                <button onClick={applyFilterUltimoDia} className="text-[10px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 transition shadow-sm">
+                                    Último Dia
                                 </button>
                                 <button onClick={clearAllFilters} className="text-[10px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded hover:bg-slate-700 transition shadow-sm">
                                     Limpar Todos os Filtros
@@ -1179,14 +1233,21 @@
                         </div>
                     </div>
 
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
                         <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
                         <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
-                        <KPICard title="Recebido" value={kpis.totalRecebido} subValue={kpis.percRecebido} color="violet" isCurrency={true} />
-                        <KPICard title="Liquidado" value={kpis.totalLiquidado} subValue={kpis.percLiquidado} color="amber" isCurrency={true} />
-                        <KPICard title="Pago" value={kpis.totalPago} subValue={kpis.percPago} color="emerald" isCurrency={true} />
-                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} color="red" isCurrency={true} />
-                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} color="orange" isCurrency={true} />
+                        <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif (Emp-Rcb): ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Empenhado" color="violet" isCurrency={true} />
+                        <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif (Emp-Liq): ${formatBRL(kpis.totalEmpenhado - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Empenhado" color="amber" isCurrency={true} />
+                        <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif (Emp-Pag): ${formatBRL(kpis.totalEmpenhado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Empenhado" color="emerald" isCurrency={true} />
+                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} percSuffix=" do Empenhado" color="red" isCurrency={true} />
+                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
+                    </div>
+
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
+                        <DocStatCard title="Docs NS ou NL" count={docStats.nsnl.count} date={docStats.nsnl.latestDate} />
+                        <DocStatCard title="Docs OB" count={docStats.ob.count} date={docStats.ob.latestDate} />
+                        <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} />
                     </div>
 
                     {/* NOVA SESSÃO: ROSCAS E ÚLTIMOS DOCUMENTOS */}
@@ -1195,8 +1256,8 @@
                         <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Composição de Documentos</h3>
                             <div className="flex flex-col gap-6 h-full justify-between pb-4">
-                                <div className="h-[200px]">
-                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">QTD DE DOCUMENTOS ÚNICOS</h4>
+                                <div className="relative h-[200px]">
+                                    <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1 absolute w-full top-[-20px]">QTD DE DOCUMENTOS ÚNICOS</h4>
                                     <ChartComponent id="doughnutQtd" type="doughnut" data={{
                                         labels: ['Empenhado', 'Recebido', 'Liquidado', 'Pago'],
                                         datasets: [{
@@ -1204,6 +1265,10 @@
                                             backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
                                         }]
                                     }} options={doughnutOptionsDocs} />
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-4">
+                                        <span className="text-2xl font-black text-slate-700 leading-none">{totalUniqueDocs.toLocaleString('pt-BR')}</span>
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">Total Docs</span>
+                                    </div>
                                 </div>
                                 <div className="h-[280px] pt-4">
                                     <h4 className="text-[10px] font-bold text-slate-500 text-center mb-1">VOLUME FINANCEIRO TOTAL (R$)</h4>
@@ -1214,8 +1279,16 @@
 
                         {/* Últimos Documentos */}
                         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Últimos Lançamentos (Recentes)</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-30px)]">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos (Recentes)</h3>
+                                {maxDateInfo.str && (
+                                    <div className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded shadow-sm flex items-center gap-1">
+                                        <span className="uppercase">Último Dia:</span>
+                                        <span className="text-[11px]">{maxDateInfo.str}</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-40px)]">
                                 <LatestDocCard title="Último Documento: EMPENHADO" doc={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
                                 <LatestDocCard title="Último Documento: RECEBIDO" doc={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
                                 <LatestDocCard title="Último Documento: LIQUIDADO" doc={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
@@ -1446,15 +1519,8 @@
             );
         }
 
-        // =========================================================
-        // COMPONENTE DE LOGIN (APP RAIZ)
-        // =========================================================
         function App() {
-            // Inicializa a autenticação lendo do LocalStorage (Sessão persistente)
-            const [isAuthenticated, setIsAuthenticated] = useState(() => {
-                try { return localStorage.getItem('isAuth_Contabil') === 'true'; } 
-                catch(e) { return false; }
-            });
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
             const [username, setUsername] = useState("");
             const [password, setPassword] = useState("");
             const [error, setError] = useState("");
@@ -1471,7 +1537,6 @@
                 const inputUser = username.toLowerCase().trim();
                 if (users[inputUser] && users[inputUser] === password) {
                     setIsAuthenticated(true);
-                    try { localStorage.setItem('isAuth_Contabil', 'true'); } catch(e) {}
                     setError("");
                 } else {
                     setError("Credenciais inválidas. Verifique o usuário e a senha.");
