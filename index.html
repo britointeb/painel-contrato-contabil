@@ -299,7 +299,7 @@
                 </div>
             );
             return (
-                <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border-t-4 bg-white flex flex-col justify-center border-x border-b border-slate-200 h-full ${colorClass.split(' ')[0]}`}>
+                <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border border-t-4 bg-white flex flex-col justify-center h-full ${colorClass.split(' ')[0]}`}>
                     <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${colorClass.split(' ')[1]}`}>{title}</h4>
                     
                     <div className="flex justify-between items-center mb-2">
@@ -325,6 +325,10 @@
                 </div>
             );
         }
+
+        // =========================================================
+        // HEADERS DE TABELAS REUTILIZÁVEIS (TEXTO, NÚMERICO, DATA)
+        // =========================================================
 
         function TextHeader({ label, field, current, onSort, align="left", searchVal, onSearchChange, widthClass }) {
             const isSorted = current.key === field;
@@ -385,21 +389,74 @@
                         {label}
                         <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
                     </div>
-                    <div className="flex gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
-                        <input 
-                            type="number" 
-                            placeholder="> Min" 
-                            value={filterMin}
-                            onChange={handleMin}
-                            className="w-1/2 px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
-                        />
-                        <input 
-                            type="number" 
-                            placeholder="< Max" 
-                            value={filterMax}
-                            onChange={handleMax}
-                            className="w-1/2 px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
-                        />
+                    <div className="flex flex-col gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center w-full">
+                            <span className="text-[7px] text-slate-400 w-6 font-bold">Max:</span>
+                            <input 
+                                type="number" 
+                                value={filterMax}
+                                onChange={handleMax}
+                                className="flex-1 w-full px-1 py-0.5 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                            />
+                        </div>
+                        <div className="flex items-center w-full">
+                            <span className="text-[7px] text-slate-400 w-6 font-bold">Min:</span>
+                            <input 
+                                type="number" 
+                                value={filterMin}
+                                onChange={handleMin}
+                                className="flex-1 w-full px-1 py-0.5 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                            />
+                        </div>
+                    </div>
+                </th>
+            );
+        }
+
+        function DateHeader({ label, field, current, onSort, dateFilters, setDateFilters, align="left", widthClass }) {
+            const isSorted = current.key === field;
+            const filterMin = dateFilters[field] ? dateFilters[field].min : '';
+            const filterMax = dateFilters[field] ? dateFilters[field].max : '';
+
+            const handleMin = (e) => {
+                const val = e.target.value;
+                setDateFilters(p => ({...p, [field]: {...(p[field] || {}), min: val}}));
+            };
+            
+            const handleMax = (e) => {
+                const val = e.target.value;
+                setDateFilters(p => ({...p, [field]: {...(p[field] || {}), max: val}}));
+            };
+
+            return (
+                <th className={`p-2 transition text-${align} bg-slate-100 relative group ${widthClass || 'w-auto'}`}>
+                    <div onMouseDown={startResize} className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-transparent hover:bg-blue-400 z-20"></div>
+                    <div 
+                        className={`flex items-center gap-1 cursor-pointer hover:text-blue-500 justify-${align === 'right' ? 'end' : align === 'center' ? 'center' : 'start'}`}
+                        onClick={() => onSort(field)}
+                    >
+                        {label}
+                        <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+                    </div>
+                    <div className="flex flex-col gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center w-full" title="Data Máxima">
+                            <span className="text-[7px] text-slate-400 w-6 font-bold">Max:</span>
+                            <input 
+                                type="date" 
+                                value={filterMax}
+                                onChange={handleMax}
+                                className="flex-1 w-full px-0.5 py-0.5 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                            />
+                        </div>
+                        <div className="flex items-center w-full" title="Data Mínima">
+                            <span className="text-[7px] text-slate-400 w-6 font-bold">Min:</span>
+                            <input 
+                                type="date" 
+                                value={filterMin}
+                                onChange={handleMin}
+                                className="flex-1 w-full px-0.5 py-0.5 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner"
+                            />
+                        </div>
                     </div>
                 </th>
             );
@@ -537,11 +594,11 @@
             const [searchDocumento, setSearchDocumento] = useState("");
             const [searchObs, setSearchObs] = useState("");
             const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''} });
+            const [dateFilters, setDateFilters] = useState({ dia: {min:'', max:''} });
 
             const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
 
             const tableData = useMemo(() => {
-                // Modificação Crucial: Em vez de filtrar valores != 0, filtramos se a linha *tem* a métrica preenchida.
                 const hasField = metricField.replace('v_', 'has_');
                 let filtered = data.filter(row => row[hasField]);
 
@@ -557,7 +614,20 @@
                         if (numFilters[metricField].min !== '' && item[metricField] < parseFloat(numFilters[metricField].min)) matchNum = false;
                         if (numFilters[metricField].max !== '' && item[metricField] > parseFloat(numFilters[metricField].max)) matchNum = false;
                     }
-                    return matchContrato && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum;
+
+                    let matchDateCol = true;
+                    if (dateFilters.dia) {
+                        if (dateFilters.dia.min) {
+                            const minTime = new Date(dateFilters.dia.min + "T00:00:00").getTime();
+                            if (item.diaVal < minTime) matchDateCol = false;
+                        }
+                        if (dateFilters.dia.max) {
+                            const maxTime = new Date(dateFilters.dia.max + "T23:59:59").getTime();
+                            if (item.diaVal > maxTime) matchDateCol = false;
+                        }
+                    }
+
+                    return matchContrato && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum && matchDateCol;
                 });
 
                 if (sortConfig.key) {
@@ -570,9 +640,9 @@
                     });
                 }
                 return filtered;
-            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
+            }, [data, metricField, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, sortConfig]);
             
-            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig]);
+            useEffect(() => { setLimit(100); }, [data, searchContrato, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, sortConfig]);
 
             const totalMetric = useMemo(() => {
                 return tableData.reduce((acc, curr) => acc + curr[metricField], 0);
@@ -580,7 +650,7 @@
 
             const exportColumns = [
                 { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
-                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" },
                 { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
                 { header: "OBS", key: "obs" },
                 { header: metricLabel, key: metricField, isCurrency: true }
@@ -600,13 +670,13 @@
                         <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
                             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                 <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                    <TextHeader widthClass="w-[8%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                    <DateHeader widthClass="w-[10%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
                                     <TextHeader widthClass="w-[10%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
-                                    <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
-                                    <TextHeader widthClass="w-[18%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                    <TextHeader widthClass="w-[8%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} />
+                                    <TextHeader widthClass="w-[16%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
                                     <TextHeader widthClass="w-[10%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
                                     <TextHeader widthClass="w-[10%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
-                                    <TextHeader widthClass="w-[22%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
+                                    <TextHeader widthClass="w-[20%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
                                     <NumericHeader widthClass="w-[16%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
                                 </tr>
                             </thead>
@@ -671,11 +741,12 @@
             const [searchDocumento, setSearchDocumento] = useState("");
             const [searchObs, setSearchObs] = useState("");
 
-            // Estados Especiais
             const [fOnlyBloqueado, setFOnlyBloqueado] = useState(false);
             const [fOnlyCancelado, setFOnlyCancelado] = useState(false);
-
             const [visibleRows, setVisibleRows] = useState(100);
+            
+            const [areaAggLevel, setAreaAggLevel] = useState('mes');
+            const [barAggLevel, setBarAggLevel] = useState('mes');
 
             const initialNumFilters = {
                 v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
@@ -683,14 +754,18 @@
                 v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''}
             };
             const [numFilters, setNumFilters] = useState(initialNumFilters);
+            const [dateFilters, setDateFilters] = useState({ dia: {min:'', max:''} });
 
-            useEffect(() => { setVisibleRows(100); }, [fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
+            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+
+            useEffect(() => { setVisibleRows(100); }, [fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
 
             const clearAllFilters = () => {
                 setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
                 setDDiaDe(""); setDDiaAte("");
                 setSearchContratoTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs("");
                 setNumFilters(initialNumFilters);
+                setDateFilters({ dia: {min:'', max:''} });
                 setFOnlyBloqueado(false);
                 setFOnlyCancelado(false);
             };
@@ -773,7 +848,6 @@
                     let info = getVal(["ITEM_INFORMACAO", "INTEN_INFORMACAO", "Informacao"], ["informacao", "item_in", "inten_in"], row).toUpperCase();
                     let valStr = getVal(["Valor Item (R$)", "Valor (R$)", "Valor"], ["valor", "vlr", "r$", "montante", "saldo"], row);
                     
-                    // Lógica para Inferir se Info estava em branco
                     if (!info) {
                         const rowStr = row.join(" ").toUpperCase();
                         if (rowStr.includes("EMPENHADO")) info = "EMPENHADO";
@@ -795,7 +869,6 @@
                     const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
 
                     if (!grouped[key]) {
-                        // Flags 'has_' servem para identificar que a métrica existe para aquele documento, mesmo com valor = 0
                         grouped[key] = {
                             dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
                             ug, favorecido: fav, empenho, documento: doc, obs, contrato,
@@ -888,14 +961,24 @@
                         if (numFilters[key].max !== '' && item[key] > parseFloat(numFilters[key].max)) { matchNum = false; break; }
                     }
 
-                    // Modificação: em vez de !fOnlyBloqueado || item.v_bloqueado !== 0,
-                    // validamos se tem_bloqueado (linha que afirma existir bloqueio), independentemente se é zero!
+                    let matchDateCol = true;
+                    if (dateFilters.dia) {
+                        if (dateFilters.dia.min) {
+                            const minTime = new Date(dateFilters.dia.min + "T00:00:00").getTime();
+                            if (item.diaVal < minTime) matchDateCol = false;
+                        }
+                        if (dateFilters.dia.max) {
+                            const maxTime = new Date(dateFilters.dia.max + "T23:59:59").getTime();
+                            if (item.diaVal > maxTime) matchDateCol = false;
+                        }
+                    }
+
                     const matchBloqueado = !fOnlyBloqueado || item.has_bloqueado;
                     const matchCancelado = !fOnlyCancelado || item.has_cancelado;
 
                     return matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
                            matchDiaDe && matchDiaAte && searchContratoTabelaMatch && searchUgNomeMatch && searchEmpenhoMatch && 
-                           searchDocumentoMatch && searchObsMatch && matchNum && matchBloqueado && matchCancelado;
+                           searchDocumentoMatch && searchObsMatch && matchNum && matchDateCol && matchBloqueado && matchCancelado;
                 });
 
                 if (sortConfig.key) {
@@ -908,7 +991,7 @@
                     });
                 }
                 return filtered;
-            }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
+            }, [rawData, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, dDiaDe, dDiaAte, searchContratoTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
 
             const totalsMaster = useMemo(() => {
                 let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
@@ -1015,9 +1098,162 @@
                 })).sort((a, b) => parseInt(a.label) - parseInt(b.label)); 
             }, [filteredData]);
 
+            const areaChartData = useMemo(() => {
+                const sortedData = [...filteredData].sort((a, b) => a.diaVal - b.diaVal);
+                const buckets = {};
+                const keys = [];
+
+                sortedData.forEach(item => {
+                    if (!item.diaVal) return;
+                    const d = new Date(item.diaVal);
+                    let key = '';
+                    let label = '';
+                    
+                    if (areaAggLevel === 'dia') {
+                        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        label = item.dia;
+                    } else if (areaAggLevel === 'mes') {
+                        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                        label = `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                    } else {
+                        key = `${d.getFullYear()}`;
+                        label = `${d.getFullYear()}`;
+                    }
+
+                    if (!buckets[key]) {
+                        buckets[key] = {
+                            label,
+                            inc_emp: 0, inc_rec: 0, inc_liq: 0, inc_pag: 0, inc_can: 0, inc_blo: 0,
+                            docs_emp: [], docs_rec: [], docs_liq: [], docs_pag: [], docs_can: [], docs_blo: []
+                        };
+                        keys.push(key);
+                    }
+
+                    buckets[key].inc_emp += item.v_empenhado;
+                    buckets[key].inc_rec += item.v_recebido;
+                    buckets[key].inc_liq += item.v_liquidado;
+                    buckets[key].inc_pag += item.v_pago;
+                    buckets[key].inc_can += item.v_cancelado;
+                    buckets[key].inc_blo += item.v_bloqueado;
+
+                    if (item.v_empenhado !== 0 && buckets[key].docs_emp.length < 15) buckets[key].docs_emp.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_empenhado)})`);
+                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
+                    if (item.v_liquidado !== 0 && buckets[key].docs_liq.length < 15) buckets[key].docs_liq.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_liquidado)})`);
+                    if (item.v_pago !== 0 && buckets[key].docs_pag.length < 15) buckets[key].docs_pag.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_pago)})`);
+                    if (item.v_cancelado !== 0 && buckets[key].docs_can.length < 15) buckets[key].docs_can.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_cancelado)})`);
+                    if (item.v_bloqueado !== 0 && buckets[key].docs_blo.length < 15) buckets[key].docs_blo.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_bloqueado)})`);
+                });
+
+                let cum_emp = 0, cum_rec = 0, cum_liq = 0, cum_pag = 0, cum_can = 0, cum_blo = 0;
+                const labels = [];
+                const d_emp = [], d_rec = [], d_liq = [], d_pag = [], d_can = [], d_blo = [];
+                const tooltips = [[], [], [], [], [], []];
+
+                keys.forEach(k => {
+                    const b = buckets[k];
+                    cum_emp += b.inc_emp;
+                    cum_rec += b.inc_rec;
+                    cum_liq += b.inc_liq;
+                    cum_pag += b.inc_pag;
+                    cum_can += b.inc_can;
+                    cum_blo += b.inc_blo;
+
+                    labels.push(b.label);
+                    d_emp.push(cum_emp);
+                    d_rec.push(cum_rec);
+                    d_liq.push(cum_liq);
+                    d_pag.push(cum_pag);
+                    d_can.push(cum_can);
+                    d_blo.push(cum_blo);
+                    
+                    tooltips[0].push(b.docs_emp);
+                    tooltips[1].push(b.docs_rec);
+                    tooltips[2].push(b.docs_liq);
+                    tooltips[3].push(b.docs_pag);
+                    tooltips[4].push(b.docs_can);
+                    tooltips[5].push(b.docs_blo);
+                });
+
+                return { labels, d_emp, d_rec, d_liq, d_pag, d_can, d_blo, tooltips };
+            }, [filteredData, areaAggLevel]);
+
+            const barChartData = useMemo(() => {
+                const sortedData = [...filteredData].sort((a, b) => a.diaVal - b.diaVal);
+                const buckets = {};
+                const keys = [];
+
+                sortedData.forEach(item => {
+                    if (!item.diaVal) return;
+                    const d = new Date(item.diaVal);
+                    let key = '';
+                    let label = '';
+                    
+                    if (barAggLevel === 'dia') {
+                        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                        label = item.dia;
+                    } else if (barAggLevel === 'mes') {
+                        key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                        label = `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+                    } else {
+                        key = `${d.getFullYear()}`;
+                        label = `${d.getFullYear()}`;
+                    }
+
+                    if (!buckets[key]) {
+                        buckets[key] = {
+                            label,
+                            inc_emp: 0, inc_rec: 0, inc_liq: 0, inc_pag: 0, inc_can: 0, inc_blo: 0,
+                            docs_emp: [], docs_rec: [], docs_liq: [], docs_pag: [], docs_can: [], docs_blo: []
+                        };
+                        keys.push(key);
+                    }
+
+                    buckets[key].inc_emp += item.v_empenhado;
+                    buckets[key].inc_rec += item.v_recebido;
+                    buckets[key].inc_liq += item.v_liquidado;
+                    buckets[key].inc_pag += item.v_pago;
+                    buckets[key].inc_can += item.v_cancelado;
+                    buckets[key].inc_blo += item.v_bloqueado;
+
+                    if (item.v_empenhado !== 0 && buckets[key].docs_emp.length < 15) buckets[key].docs_emp.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_empenhado)})`);
+                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
+                    if (item.v_liquidado !== 0 && buckets[key].docs_liq.length < 15) buckets[key].docs_liq.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_liquidado)})`);
+                    if (item.v_pago !== 0 && buckets[key].docs_pag.length < 15) buckets[key].docs_pag.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_pago)})`);
+                    if (item.v_cancelado !== 0 && buckets[key].docs_can.length < 15) buckets[key].docs_can.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_cancelado)})`);
+                    if (item.v_bloqueado !== 0 && buckets[key].docs_blo.length < 15) buckets[key].docs_blo.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_bloqueado)})`);
+                });
+
+                const labels = [];
+                const d_emp = [], d_rec = [], d_liq = [], d_pag = [], d_can = [], d_blo = [];
+                const tooltips = [[], [], [], [], [], []];
+                let max_val = 1;
+
+                keys.forEach(k => {
+                    const b = buckets[k];
+                    labels.push(b.label);
+                    d_emp.push(b.inc_emp);
+                    d_rec.push(b.inc_rec);
+                    d_liq.push(b.inc_liq);
+                    d_pag.push(b.inc_pag);
+                    d_can.push(b.inc_can);
+                    d_blo.push(b.inc_blo);
+                    
+                    tooltips[0].push(b.docs_emp);
+                    tooltips[1].push(b.docs_rec);
+                    tooltips[2].push(b.docs_liq);
+                    tooltips[3].push(b.docs_pag);
+                    tooltips[4].push(b.docs_can);
+                    tooltips[5].push(b.docs_blo);
+                    
+                    const localMax = Math.max(b.inc_emp, b.inc_rec, b.inc_liq, b.inc_pag, b.inc_can, b.inc_blo);
+                    if (localMax > max_val) max_val = localMax;
+                });
+
+                return { labels, d_emp, d_rec, d_liq, d_pag, d_can, d_blo, tooltips, max_val };
+            }, [filteredData, barAggLevel]);
+
             const latestDocs = useMemo(() => {
                 const getLatest = (field) => {
-                    // Validamos se o documento tem a métrica sinalizada pela presença da flag 'has_'
                     const hasField = field.replace('v_', 'has_');
                     const validDocs = filteredData.filter(d => d[hasField]);
                     if (validDocs.length === 0) return null;
@@ -1094,8 +1330,6 @@
                 { label: 'PAGO', value: kpis.totalPago, color: 'bg-emerald-500' }
             ];
 
-            const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
-
             const chartConfigOptions = (dataArray) => ({
                 indexAxis: 'x', 
                 responsive: true, 
@@ -1155,7 +1389,7 @@
 
             const exportMasterColumns = [
                 { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, 
-                { header: "UG CÓD", key: "ug" }, { header: "UG NOME", key: "favorecido" },
+                { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" },
                 { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
                 { header: "OBS", key: "obs" }, { header: "EMPENHADO", key: "v_empenhado", isCurrency: true },
                 { header: "RECEBIDO", key: "v_recebido", isCurrency: true }, { header: "LIQUIDADO", key: "v_liquidado", isCurrency: true },
@@ -1221,30 +1455,30 @@
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                            <MultiSelect label="UG CÓDIGO" options={[...new Set(rawData.map(r => r.ug))].sort()} selected={fUg} onChange={setFUg} />
+                            <MultiSelect label="EMITENTE" options={[...new Set(rawData.map(r => r.ug))].sort()} selected={fUg} onChange={setFUg} />
                             <MultiSelect label="FAVORECIDO" options={[...new Set(rawData.map(r => r.favorecido))].sort()} selected={fFavorecido} onChange={setFFavorecido} />
                             <MultiSelect label="EMPENHO" options={[...new Set(rawData.map(r => r.empenho))].sort()} selected={fEmpenho} onChange={setFEmpenho} />
                             <MultiSelect label="DOCUMENTO" options={[...new Set(rawData.map(r => r.documento))].sort()} selected={fDocumento} onChange={setFDocumento} />
                             <MultiSelect label="CONTRATO" options={[...new Set(rawData.map(r => r.contrato))].sort()} selected={fContrato} onChange={setFContrato} />
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                        <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
-                        <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
+                            <DateInput label="DIA (DE)" value={dDiaDe} onChange={setDDiaDe} />
+                            <DateInput label="DIA (ATÉ)" value={dDiaAte} onChange={setDDiaAte} />
+                        </div>
                     </div>
-                </div>
 
-                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
-                    <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
-                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
-                    <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif (Emp-Rcb): ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Empenhado" color="violet" isCurrency={true} />
-                    <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif (Rcb-Liq): ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Empenhado" color="amber" isCurrency={true} />
-                    <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif (Liq-Pag): ${formatBRL(kpis.totalLiquidado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Empenhado" color="emerald" isCurrency={true} />
-                    <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} percSuffix=" do Empenhado" color="red" isCurrency={true} />
-                    <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
-                </div>
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
+                        <KPICard title="Qtd Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
+                        <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                        <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif (Emp-Rcb): ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Empenhado" color="violet" isCurrency={true} />
+                        <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif (Rcb-Liq): ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Empenhado" color="amber" isCurrency={true} />
+                        <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif (Liq-Pag): ${formatBRL(kpis.totalLiquidado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Empenhado" color="emerald" isCurrency={true} />
+                        <KPICard title="Cancelado" value={kpis.totalCancelado} subValue={kpis.percCancelado} percSuffix=" do Empenhado" color="red" isCurrency={true} />
+                        <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
+                    </div>
 
-                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                        <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
                         <DocStatCard title="Docs NS ou NL" count={docStats.nsnl.count} date={docStats.nsnl.latestDate} />
                         <DocStatCard title="Docs OB" count={docStats.ob.count} date={docStats.ob.latestDate} />
                         <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} />
@@ -1329,7 +1563,7 @@
                             </div>
                         </div>
 
-                        {/* NOVO: GRÁFICO POR ANO (COM DOIS EIXOS) */}
+                        {/* GRÁFICO POR ANO (COM DOIS EIXOS) */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                             <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Evolução por Ano (Empenhado vs Contratos Únicos)</h3>
                             <div className="h-[400px]">
@@ -1402,31 +1636,162 @@
 
                     </div>
 
-                    {/* GRÁFICOS PARTE 2 */}
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                    {/* NOVO: GRÁFICO ÁREAS SUPERPOSTAS (ACUMULATIVO) */}
+                    <div className="max-w-[1600px] mx-auto mb-10">
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por CONTRATO</h3>
-                            <div className="h-[350px]">
-                                <ChartComponent id="chartContratoSec" type="bar" data={{
-                                    labels: dataByContrato.map(d => formatLabelMultiLine(d.label)),
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xs font-black text-slate-800 uppercase">Evolução Acumulada de Lançamentos</h3>
+                                <select 
+                                    className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50"
+                                    value={areaAggLevel}
+                                    onChange={(e) => setAreaAggLevel(e.target.value)}
+                                >
+                                    <option value="dia">Acumulado por Dia</option>
+                                    <option value="mes">Acumulado por Mês/Ano</option>
+                                    <option value="ano">Acumulado por Ano</option>
+                                </select>
+                            </div>
+                            <div className="h-[450px]">
+                                <ChartComponent id="chartAreaEvolucao" type="line" data={{
+                                    labels: areaChartData.labels,
                                     datasets: [
-                                        { label: '05_TOTAL_CANCELADO', data: dataByContrato.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
-                                        { label: '06_TOTAL_BLOQUEADO', data: dataByContrato.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                        { label: 'EMPENHADO', data: areaChartData.d_emp, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 },
+                                        { label: 'RECEBIDO', data: areaChartData.d_rec, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 },
+                                        { label: 'LIQUIDADO', data: areaChartData.d_liq, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 },
+                                        { label: 'PAGO', data: areaChartData.d_pag, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 },
+                                        { label: 'CANCELADO', data: areaChartData.d_can, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 },
+                                        { label: 'BLOQUEADO', data: areaChartData.d_blo, borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.3)', fill: true, tension: 0, pointRadius: 2, pointHoverRadius: 5 }
                                     ]
-                                }} options={chartConfigOptions(dataByContrato)} />
+                                }} options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    interaction: {
+                                        mode: 'index',
+                                        intersect: false,
+                                    },
+                                    plugins: {
+                                        datalabels: { display: false }, 
+                                        tooltip: {
+                                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                            titleFont: { size: 13, weight: 'bold' },
+                                            bodyFont: { size: 11 },
+                                            callbacks: {
+                                                label: function(context) {
+                                                    return context.dataset.label + ': ' + formatBRL(context.raw);
+                                                },
+                                                afterBody: function(context) {
+                                                    if (!context || context.length === 0) return '';
+                                                    const datasetIdx = context[0].datasetIndex;
+                                                    const dataIdx = context[0].dataIndex;
+                                                    const docsList = areaChartData.tooltips[datasetIdx][dataIdx] || [];
+                                                    if (docsList.length === 0) return '';
+                                                    
+                                                    let str = docsList.slice(0, 10).join('\n');
+                                                    if (docsList.length > 10) str += `\n... (e mais ${docsList.length - 10} docs neste período)`;
+                                                    return '\n--- Documentos desta métrica no período ---\n' + str;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: { ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } },
+                                        y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } }
+                                    }
+                                }} />
                             </div>
                         </div>
+                    </div>
 
+                    {/* NOVO: GRÁFICO DE BOLHAS (NÃO ACUMULATIVO) */}
+                    <div className="max-w-[1600px] mx-auto mb-10">
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                            <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Cancelado e Bloqueado por FAVORECIDO</h3>
-                            <div className="h-[350px]">
-                                <ChartComponent id="chartFavorecidoSec" type="bar" data={{
-                                    labels: dataByFavorecido.map(d => formatLabelMultiLine(d.label)),
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xs font-black text-slate-800 uppercase">Evolução de Lançamentos por Período (Não Acumulativo)</h3>
+                                <select 
+                                    className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50"
+                                    value={barAggLevel}
+                                    onChange={(e) => setBarAggLevel(e.target.value)}
+                                >
+                                    <option value="dia">Por Dia</option>
+                                    <option value="mes">Por Mês/Ano</option>
+                                    <option value="ano">Por Ano</option>
+                                </select>
+                            </div>
+                            <div className="h-[450px]">
+                                <ChartComponent id="chartBarEvolucao" type="bubble" data={{
+                                    labels: barChartData.labels,
                                     datasets: [
-                                        { label: '05_TOTAL_CANCELADO', data: dataByFavorecido.map(d => d.cancelado), backgroundColor: '#ef4444', borderRadius: 4 },
-                                        { label: '06_TOTAL_BLOQUEADO', data: dataByFavorecido.map(d => d.bloqueado), backgroundColor: '#f97316', borderRadius: 4 }
+                                        { 
+                                            label: 'EMPENHADO', 
+                                            data: barChartData.d_emp.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: '#3b82f6', borderWidth: 1, hoverBackgroundColor: 'rgba(59, 130, 246, 1)', hoverBorderWidth: 2 
+                                        },
+                                        { 
+                                            label: 'RECEBIDO', 
+                                            data: barChartData.d_rec.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(139, 92, 246, 0.6)', borderColor: '#8b5cf6', borderWidth: 1, hoverBackgroundColor: 'rgba(139, 92, 246, 1)', hoverBorderWidth: 2 
+                                        },
+                                        { 
+                                            label: 'LIQUIDADO', 
+                                            data: barChartData.d_liq.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(245, 158, 11, 0.6)', borderColor: '#f59e0b', borderWidth: 1, hoverBackgroundColor: 'rgba(245, 158, 11, 1)', hoverBorderWidth: 2 
+                                        },
+                                        { 
+                                            label: 'PAGO', 
+                                            data: barChartData.d_pag.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(16, 185, 129, 0.6)', borderColor: '#10b981', borderWidth: 1, hoverBackgroundColor: 'rgba(16, 185, 129, 1)', hoverBorderWidth: 2 
+                                        },
+                                        { 
+                                            label: 'CANCELADO', 
+                                            data: barChartData.d_can.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(239, 68, 68, 0.6)', borderColor: '#ef4444', borderWidth: 1, hoverBackgroundColor: 'rgba(239, 68, 68, 1)', hoverBorderWidth: 2 
+                                        },
+                                        { 
+                                            label: 'BLOQUEADO', 
+                                            data: barChartData.d_blo.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), 
+                                            backgroundColor: 'rgba(249, 115, 22, 0.6)', borderColor: '#f97316', borderWidth: 1, hoverBackgroundColor: 'rgba(249, 115, 22, 1)', hoverBorderWidth: 2 
+                                        }
                                     ]
-                                }} options={chartConfigOptions(dataByFavorecido)} />
+                                }} options={{
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        datalabels: { display: false },
+                                        tooltip: {
+                                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                            titleFont: { size: 13, weight: 'bold' },
+                                            bodyFont: { size: 11 },
+                                            callbacks: {
+                                                title: function(context) {
+                                                    return context[0].raw.x;
+                                                },
+                                                label: function(context) {
+                                                    return context.dataset.label + ': ' + formatBRL(context.raw.y);
+                                                },
+                                                afterBody: function(context) {
+                                                    if (!context || context.length === 0) return '';
+                                                    const datasetIdx = context[0].datasetIndex;
+                                                    const dataIdx = context[0].dataIndex;
+                                                    const docsList = barChartData.tooltips[datasetIdx][dataIdx] || [];
+                                                    if (docsList.length === 0) return '';
+                                                    
+                                                    let str = docsList.slice(0, 10).join('\n');
+                                                    if (docsList.length > 10) str += `\n... (e mais ${docsList.length - 10} docs neste período)`;
+                                                    return '\n--- Documentos desta métrica no período ---\n' + str;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: { 
+                                            type: 'category', 
+                                            labels: barChartData.labels, 
+                                            offset: true,
+                                            ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } 
+                                        },
+                                        y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } }
+                                    }
+                                }} />
                             </div>
                         </div>
                     </div>
@@ -1445,10 +1810,10 @@
                             <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%' }}>
                                 <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                     <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                        <TextHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} />
+                                        <DateHeader widthClass="w-[8%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
                                         <TextHeader widthClass="w-[8%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
-                                        <TextHeader widthClass="w-[6%]" label="UG CÓD" field="ug" current={sortConfig} onSort={handleSort} />
-                                        <TextHeader widthClass="w-[12%]" label="UG NOME" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
+                                        <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} />
+                                        <TextHeader widthClass="w-[12%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
                                         <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
                                         <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
                                         <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
