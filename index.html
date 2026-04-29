@@ -1167,7 +1167,7 @@
                     buckets[key].inc_blo += item.v_bloqueado;
 
                     if (item.v_empenhado !== 0 && buckets[key].docs_emp.length < 15) buckets[key].docs_emp.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_empenhado)})`);
-                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
+                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Emitente: ${item.ug} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
                     if (item.v_liquidado !== 0 && buckets[key].docs_liq.length < 15) buckets[key].docs_liq.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_liquidado)})`);
                     if (item.v_pago !== 0 && buckets[key].docs_pag.length < 15) buckets[key].docs_pag.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_pago)})`);
                     if (item.v_cancelado !== 0 && buckets[key].docs_can.length < 15) buckets[key].docs_can.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_cancelado)})`);
@@ -1246,7 +1246,7 @@
                     buckets[key].inc_blo += item.v_bloqueado;
 
                     if (item.v_empenhado !== 0 && buckets[key].docs_emp.length < 15) buckets[key].docs_emp.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_empenhado)})`);
-                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
+                    if (item.v_recebido !== 0 && buckets[key].docs_rec.length < 15) buckets[key].docs_rec.push(`C: ${item.contrato} | E: ${item.empenho} | Emitente: ${item.ug} | Doc: ${item.documento} (${formatBRL(item.v_recebido)})`);
                     if (item.v_liquidado !== 0 && buckets[key].docs_liq.length < 15) buckets[key].docs_liq.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_liquidado)})`);
                     if (item.v_pago !== 0 && buckets[key].docs_pag.length < 15) buckets[key].docs_pag.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_pago)})`);
                     if (item.v_cancelado !== 0 && buckets[key].docs_can.length < 15) buckets[key].docs_can.push(`C: ${item.contrato} | E: ${item.empenho} | Doc: ${item.documento} (${formatBRL(item.v_cancelado)})`);
