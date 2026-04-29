@@ -291,36 +291,55 @@
             );
         }
 
-        function LatestDocCard({ title, doc, metricField, colorClass, showEmitente }) {
-            if (!doc) return (
+        // =========================================================
+        // CARTÃO DE LATEST DOCS (AGORA RECEBE ARRAY E EXIBE ATÉ 10)
+        // =========================================================
+        function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
+            const latestDateStr = docs && docs.length > 0 ? docs[0].dia : '';
+            const latestTimestamp = docs && docs.length > 0 ? docs[0].diaVal : null;
+
+            const daysText = useMemo(() => {
+                if (!latestTimestamp) return '';
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const docDate = new Date(latestTimestamp);
+                docDate.setHours(0, 0, 0, 0);
+                const diffTime = today - docDate;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                return `(${diffDays} dia${diffDays === 1 ? '' : 's'} até hoje)`;
+            }, [latestTimestamp]);
+
+            if (!docs || docs.length === 0) return (
                 <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 opacity-60 flex flex-col justify-center h-full">
                     <h4 className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1">{title}</h4>
                     <p className="text-xs font-bold text-slate-400">Nenhum documento encontrado.</p>
                 </div>
             );
             return (
-                <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border border-t-4 bg-white flex flex-col justify-center h-full ${colorClass.split(' ')[0]}`}>
-                    <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${colorClass.split(' ')[1]}`}>{title}</h4>
-                    
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Data:</span>
-                        <span className="text-sm font-black text-slate-700">{doc.dia}</span>
-                    </div>
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Número:</span>
-                        <span className="text-[11px] font-black text-slate-700 truncate max-w-[65%] text-right" title={doc.documento}>{doc.documento}</span>
-                    </div>
-                    {showEmitente && (
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Emitente:</span>
-                            <span className="text-[10px] font-black text-slate-700 truncate max-w-[65%] text-right" title={doc.ug}>{doc.ug}</span>
+                <div className={`p-4 sm:p-5 rounded-2xl shadow-sm border border-t-4 bg-white flex flex-col h-full max-h-[300px] ${colorClass.split(' ')[0]}`}>
+                    <div className="flex justify-between items-start mb-3 shrink-0 gap-2">
+                        <h4 className={`text-[10px] font-black uppercase tracking-widest ${colorClass.split(' ')[1]}`}>{title}</h4>
+                        <div className="text-[8.5px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-right whitespace-nowrap">
+                            Último: {latestDateStr} {daysText}
                         </div>
-                    )}
-                    <div className="flex justify-between items-center mt-auto pt-3 border-t border-slate-100">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Valor:</span>
-                        <span className={`text-lg sm:text-xl font-black truncate max-w-[65%] text-right ${colorClass.split(' ')[1]}`} title={formatBRL(doc[metricField])}>
-                            {formatBRL(doc[metricField])}
-                        </span>
+                    </div>
+                    <div className="flex flex-col gap-2 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                        {docs.map((doc, idx) => (
+                            <div key={idx} className="flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0 shrink-0">
+                                <div className="flex flex-col w-2/3 pr-2">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{doc.dia}</span>
+                                        <span className="text-[11px] font-black text-slate-700 truncate" title={doc.documento}>{doc.documento}</span>
+                                    </div>
+                                    {showEmitente && (
+                                        <span className="text-[9px] font-bold text-slate-500 truncate mt-0.5" title={doc.ug}>{doc.ug}</span>
+                                    )}
+                                </div>
+                                <span className={`text-sm font-black truncate w-1/3 text-right ${colorClass.split(' ')[1]}`} title={formatBRL(doc[metricField])}>
+                                    {formatBRL(doc[metricField])}
+                                </span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
@@ -571,12 +590,23 @@
             );
         }
 
-        function DocStatCard({ title, count, date }) {
+        function DocStatCard({ title, count, date, timestamp }) {
+            const daysText = useMemo(() => {
+                if (!timestamp) return '';
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const docDate = new Date(timestamp);
+                docDate.setHours(0, 0, 0, 0);
+                const diffTime = today - docDate;
+                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                return ` (${diffDays} dia${diffDays === 1 ? '' : 's'} até hoje)`;
+            }, [timestamp]);
+
             return (
                 <div className="bg-white p-3 sm:p-4 rounded-2xl border-t-4 border-slate-400 shadow-md flex flex-col justify-center overflow-hidden min-w-0">
                     <h3 className="text-[9px] font-black uppercase tracking-widest opacity-60 mb-1 truncate" title={title}>{title}</h3>
                     <div className="font-black text-xl sm:text-2xl tracking-tight text-slate-800">{count.toLocaleString('pt-BR')}</div>
-                    <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase">Último: {date || '-'}</div>
+                    <div className="text-[9px] font-bold text-slate-500 mt-1 uppercase">Último: {date || '-'}{daysText}</div>
                 </div>
             );
         }
@@ -1253,17 +1283,18 @@
             }, [filteredData, barAggLevel]);
 
             const latestDocs = useMemo(() => {
-                const getLatest = (field) => {
+                const getLatestList = (field) => {
                     const hasField = field.replace('v_', 'has_');
                     const validDocs = filteredData.filter(d => d[hasField]);
-                    if (validDocs.length === 0) return null;
-                    return validDocs.sort((a, b) => b.diaVal - a.diaVal)[0];
+                    if (validDocs.length === 0) return [];
+                    const maxVal = Math.max(...validDocs.map(d => d.diaVal));
+                    return validDocs.filter(d => d.diaVal === maxVal).sort((a, b) => b[field] - a[field]).slice(0, 10);
                 };
                 return {
-                    empenhado: getLatest('v_empenhado'),
-                    recebido: getLatest('v_recebido'),
-                    liquidado: getLatest('v_liquidado'),
-                    pago: getLatest('v_pago')
+                    empenhado: getLatestList('v_empenhado'),
+                    recebido: getLatestList('v_recebido'),
+                    liquidado: getLatestList('v_liquidado'),
+                    pago: getLatestList('v_pago')
                 };
             }, [filteredData]);
 
@@ -1291,7 +1322,8 @@
             const docStats = useMemo(() => {
                 const stats = {
                     rone: { latestDate: null, latestVal: 0, set: new Set() },
-                    nsnl: { latestDate: null, latestVal: 0, set: new Set() },
+                    nsnl_rec: { latestDate: null, latestVal: 0, set: new Set() },
+                    nsnl_liq: { latestDate: null, latestVal: 0, set: new Set() },
                     ob: { latestDate: null, latestVal: 0, set: new Set() },
                     df: { latestDate: null, latestVal: 0, set: new Set() }
                 };
@@ -1300,26 +1332,29 @@
                     if (!item.documento || item.documento === "-") return;
                     const doc = item.documento.toUpperCase();
                     
-                    let target = null;
-                    if (doc.includes('RO') || doc.includes('NE')) target = stats.rone;
-                    else if (doc.includes('NS') || doc.includes('NL')) target = stats.nsnl;
-                    else if (doc.includes('OB')) target = stats.ob;
-                    else if (doc.includes('DF')) target = stats.df;
-
-                    if (target) {
+                    const updateStat = (target) => {
                         target.set.add(doc);
                         if (!target.latestVal || item.diaVal > target.latestVal) {
                             target.latestVal = item.diaVal;
                             target.latestDate = item.dia;
                         }
+                    };
+
+                    if (doc.includes('RO') || doc.includes('NE')) updateStat(stats.rone);
+                    if (doc.includes('NS') || doc.includes('NL')) {
+                        if (item.has_recebido) updateStat(stats.nsnl_rec);
+                        if (item.has_liquidado) updateStat(stats.nsnl_liq);
                     }
+                    if (doc.includes('OB')) updateStat(stats.ob);
+                    if (doc.includes('DF')) updateStat(stats.df);
                 });
 
                 return {
-                    rone: { count: stats.rone.set.size, latestDate: stats.rone.latestDate },
-                    nsnl: { count: stats.nsnl.set.size, latestDate: stats.nsnl.latestDate },
-                    ob: { count: stats.ob.set.size, latestDate: stats.ob.latestDate },
-                    df: { count: stats.df.set.size, latestDate: stats.df.latestDate }
+                    rone: { count: stats.rone.set.size, latestDate: stats.rone.latestDate, latestVal: stats.rone.latestVal },
+                    nsnl_rec: { count: stats.nsnl_rec.set.size, latestDate: stats.nsnl_rec.latestDate, latestVal: stats.nsnl_rec.latestVal },
+                    nsnl_liq: { count: stats.nsnl_liq.set.size, latestDate: stats.nsnl_liq.latestDate, latestVal: stats.nsnl_liq.latestVal },
+                    ob: { count: stats.ob.set.size, latestDate: stats.ob.latestDate, latestVal: stats.ob.latestVal },
+                    df: { count: stats.df.set.size, latestDate: stats.df.latestDate, latestVal: stats.df.latestVal }
                 };
             }, [filteredData]);
 
@@ -1477,11 +1512,12 @@
                         <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Empenhado" color="orange" isCurrency={true} />
                     </div>
 
-                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                        <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} />
-                        <DocStatCard title="Docs NS ou NL" count={docStats.nsnl.count} date={docStats.nsnl.latestDate} />
-                        <DocStatCard title="Docs OB" count={docStats.ob.count} date={docStats.ob.latestDate} />
-                        <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} />
+                    <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+                        <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} timestamp={docStats.rone.latestVal} />
+                        <DocStatCard title="Docs NS ou NL (Rec)" count={docStats.nsnl_rec.count} date={docStats.nsnl_rec.latestDate} timestamp={docStats.nsnl_rec.latestVal} />
+                        <DocStatCard title="Docs NS ou NL (Liq)" count={docStats.nsnl_liq.count} date={docStats.nsnl_liq.latestDate} timestamp={docStats.nsnl_liq.latestVal} />
+                        <DocStatCard title="Docs OB" count={docStats.ob.count} date={docStats.ob.latestDate} timestamp={docStats.ob.latestVal} />
+                        <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} timestamp={docStats.df.latestVal} />
                     </div>
 
                     {/* NOVA SESSÃO: ROSCAS E ÚLTIMOS DOCUMENTOS */}
@@ -1514,7 +1550,7 @@
                         {/* Últimos Documentos */}
                         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                             <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos (Recentes)</h3>
+                                <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos (Até 10 docs do último dia)</h3>
                                 {maxDateInfo.str && (
                                     <div className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded shadow-sm flex items-center gap-1">
                                         <span className="uppercase">Último Dia:</span>
@@ -1523,10 +1559,10 @@
                                 )}
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-40px)]">
-                                <LatestDocCard title="Último Documento: EMPENHADO" doc={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
-                                <LatestDocCard title="Último Documento: RECEBIDO" doc={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
-                                <LatestDocCard title="Último Documento: LIQUIDADO" doc={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
-                                <LatestDocCard title="Último Documento: PAGO" doc={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                                <LatestDocCard title="Últimos Lançamentos: EMPENHADO" docs={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
+                                <LatestDocCard title="Últimos Lançamentos: RECEBIDO" docs={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
+                                <LatestDocCard title="Últimos Lançamentos: LIQUIDADO" docs={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
+                                <LatestDocCard title="Últimos Lançamentos: PAGO" docs={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
                             </div>
                         </div>
                     </div>
@@ -1677,18 +1713,18 @@
                                             bodyFont: { size: 11 },
                                             callbacks: {
                                                 label: function(context) {
-                                                    return context.dataset.label + ': ' + formatBRL(context.raw);
-                                                },
-                                                afterBody: function(context) {
-                                                    if (!context || context.length === 0) return '';
-                                                    const datasetIdx = context[0].datasetIndex;
-                                                    const dataIdx = context[0].dataIndex;
-                                                    const docsList = areaChartData.tooltips[datasetIdx][dataIdx] || [];
-                                                    if (docsList.length === 0) return '';
+                                                    const val = context.raw.y !== undefined ? context.raw.y : context.raw;
+                                                    let lines = [context.dataset.label + ': ' + formatBRL(val)];
                                                     
-                                                    let str = docsList.slice(0, 10).join('\n');
-                                                    if (docsList.length > 10) str += `\n... (e mais ${docsList.length - 10} docs neste período)`;
-                                                    return '\n--- Documentos desta métrica no período ---\n' + str;
+                                                    const datasetIdx = context.datasetIndex;
+                                                    const dataIdx = context.dataIndex;
+                                                    const docsList = areaChartData.tooltips[datasetIdx][dataIdx] || [];
+                                                    
+                                                    if (docsList.length > 0) {
+                                                        lines.push(...docsList.slice(0, 10).map(d => '  • ' + d));
+                                                        if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`);
+                                                    }
+                                                    return lines;
                                                 }
                                             }
                                         }
@@ -1766,18 +1802,18 @@
                                                     return context[0].raw.x;
                                                 },
                                                 label: function(context) {
-                                                    return context.dataset.label + ': ' + formatBRL(context.raw.y);
-                                                },
-                                                afterBody: function(context) {
-                                                    if (!context || context.length === 0) return '';
-                                                    const datasetIdx = context[0].datasetIndex;
-                                                    const dataIdx = context[0].dataIndex;
-                                                    const docsList = barChartData.tooltips[datasetIdx][dataIdx] || [];
-                                                    if (docsList.length === 0) return '';
+                                                    const val = context.raw.y !== undefined ? context.raw.y : context.raw;
+                                                    let lines = [context.dataset.label + ': ' + formatBRL(val)];
                                                     
-                                                    let str = docsList.slice(0, 10).join('\n');
-                                                    if (docsList.length > 10) str += `\n... (e mais ${docsList.length - 10} docs neste período)`;
-                                                    return '\n--- Documentos desta métrica no período ---\n' + str;
+                                                    const datasetIdx = context.datasetIndex;
+                                                    const dataIdx = context.dataIndex;
+                                                    const docsList = barChartData.tooltips[datasetIdx][dataIdx] || [];
+                                                    
+                                                    if (docsList.length > 0) {
+                                                        lines.push(...docsList.slice(0, 10).map(d => '  • ' + d));
+                                                        if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`);
+                                                    }
+                                                    return lines;
                                                 }
                                             }
                                         }
