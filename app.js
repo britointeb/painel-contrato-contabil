@@ -5,6 +5,7 @@ if (window.ChartDataLabels) {
     Chart.defaults.set('plugins.datalabels', { display: false });
 }
 
+// Plugin: Linha Tracejada Vermelha para os 50% do Gráfico de 100%
 const fiftyPercentLinePlugin = {
     id: 'fiftyPercentLinePlugin',
     afterDatasetsDraw: (chart) => {
@@ -542,8 +543,8 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                             <tr key={i} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
                                 <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                <td className="p-2 align-top">
-                                    <div className="flex flex-wrap gap-1">
+                                <td className="p-2 align-middle text-center">
+                                    <div className="flex flex-wrap items-center justify-center gap-1">
                                         {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
                                             <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
                                         ))}
@@ -624,6 +625,7 @@ function Dashboard() {
 
     const [fSituacaoTags, setFSituacaoTags] = useState([]);
     const [fExistencia, setFExistencia] = useState([]);
+    const [fMovimento, setFMovimento] = useState([]);
     const [fUg, setFUg] = useState([]);
     const [fFavorecido, setFFavorecido] = useState([]);
     const [fEmpenho, setFEmpenho] = useState([]);
@@ -647,6 +649,7 @@ function Dashboard() {
     const [searchContratoTabela, setSearchContratoTabela] = useState("");
     const [searchSituacaoTabela, setSearchSituacaoTabela] = useState("");
     const [searchExistenciaTabela, setSearchExistenciaTabela] = useState("");
+    const [searchMovimentoTabela, setSearchMovimentoTabela] = useState("");
     const [searchEmitenteTabela, setSearchEmitenteTabela] = useState("");
     const [searchUgNome, setSearchUgNome] = useState(""); 
     const [searchEmpenho, setSearchEmpenho] = useState("");
@@ -680,6 +683,7 @@ function Dashboard() {
 
     const toggleSituacaoTag = (lbl) => { setFSituacaoTags(prev => prev.includes(lbl) ? prev.filter(x => x !== lbl) : [...prev, lbl]); };
     const toggleExistencia = (val) => { setFExistencia(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); };
+    const toggleMovimento = (val) => { setFMovimento(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); };
 
     const isCSupActive = fSecLog.length === 4 && cSupItemsList.every(i => fSecLog.includes(i));
     const toggleCSup = () => { if (isCSupActive) setFSecLog([]); else setFSecLog(cSupItemsList); };
@@ -700,14 +704,14 @@ function Dashboard() {
     const isContratosVigentesActive = dFimDe === ts;
     const toggleContratosVigentes = () => { if (isContratosVigentesActive) setDFimDe(""); else setDFimDe(ts); };
 
-    useEffect(() => { setVisibleRows(100); }, [fExistencia, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
+    useEffect(() => { setVisibleRows(100); }, [fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, sortConfig]);
 
     const clearAllFilters = () => {
         setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
         setFFiscal([]); setFGestor([]); setFFiscalSub([]); setFGestorSub([]); setFSecLog([]); setFCompra([]); setFModalidade([]);
-        setFSituacaoTags([]); setFExistencia([]);
+        setFSituacaoTags([]); setFExistencia([]); setFMovimento([]);
         setDDiaDe(""); setDDiaAte(""); setDInicDe(""); setDInicAte(""); setDFimDe(""); setDFimAte("");
-        setSearchContratoTabela(""); setSearchSituacaoTabela(""); setSearchExistenciaTabela(""); setSearchEmitenteTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs(""); setSearchObjeto(""); setSearchGestorTabela(""); setSearchModalidadeTabela(""); setSearchSecLogTabela("");
+        setSearchContratoTabela(""); setSearchSituacaoTabela(""); setSearchExistenciaTabela(""); setSearchMovimentoTabela(""); setSearchEmitenteTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs(""); setSearchObjeto(""); setSearchGestorTabela(""); setSearchModalidadeTabela(""); setSearchSecLogTabela("");
         setNumFilters(initialNumFilters);
         setDateFilters({ dia: {min:'', max:''}, data_inic: {min:'', max:''}, data_fim: {min:'', max:''} });
         setFOnlyBloqueado(false); setFOnlyCancelado(false);
@@ -893,7 +897,8 @@ function Dashboard() {
                     objeto: metadadosContrato ? metadadosContrato.objeto : '-',
                     diasAss: null, 
                     v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0,
-                    has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false
+                    has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false,
+                    movimentoFlags: [], movimentoStr: ""
                 };
             }
 
@@ -919,7 +924,8 @@ function Dashboard() {
                     dias_passaram: meta.dias_passaram, perc_tempo: meta.perc_tempo, encerrando_dias: meta.encerrando_dias,
                     diasAss: null, 
                     v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0,
-                    has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false
+                    has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false,
+                    movimentoFlags: [], movimentoStr: ""
                 };
             }
         });
@@ -932,6 +938,15 @@ function Dashboard() {
             } else {
                 g.diasAss = null;
             }
+
+            let movStr = "";
+            if (g.has_empenhado) { g.movimentoFlags.push({label:'EMP', color:'bg-blue-100 text-blue-800 border border-blue-200'}); movStr += "EMP "; }
+            if (g.has_recebido) { g.movimentoFlags.push({label:'RCB', color:'bg-violet-100 text-violet-800 border border-violet-200'}); movStr += "RCB "; }
+            if (g.has_liquidado) { g.movimentoFlags.push({label:'LIQ', color:'bg-amber-100 text-amber-800 border border-amber-200'}); movStr += "LIQ "; }
+            if (g.has_pago) { g.movimentoFlags.push({label:'PAG', color:'bg-emerald-100 text-emerald-800 border border-emerald-200'}); movStr += "PAG "; }
+            if (g.has_bloqueado) { g.movimentoFlags.push({label:'BLOQ', color:'bg-orange-100 text-orange-800 border border-orange-200'}); movStr += "BLOQ "; }
+            if (g.has_cancelado) { g.movimentoFlags.push({label:'CAN', color:'bg-red-100 text-red-800 border border-red-200'}); movStr += "CAN "; }
+            g.movimentoStr = movStr.trim();
         });
         
         setRawData(Object.values(grouped));
@@ -992,9 +1007,20 @@ function Dashboard() {
 
             const matchSitTag = fSituacaoTags.length === 0 || (item.situacaoFlags && item.situacaoFlags.some(f => fSituacaoTags.includes(f.label)));
 
+            const matchMovimentoTag = fMovimento.length === 0 || fMovimento.some(m => {
+                if (m === 'EMP') return item.has_empenhado;
+                if (m === 'RCB') return item.has_recebido;
+                if (m === 'LIQ') return item.has_liquidado;
+                if (m === 'PAG') return item.has_pago;
+                if (m === 'BLOQ') return item.has_bloqueado;
+                if (m === 'CAN') return item.has_cancelado;
+                return false;
+            });
+
             const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase());
             const searchSituacaoMatch = !searchSituacaoTabela || item.situacao.includes(searchSituacaoTabela.toUpperCase());
             const searchExistenciaMatch = !searchExistenciaTabela || item.existencia.includes(searchExistenciaTabela.toUpperCase());
+            const searchMovimentoMatch = !searchMovimentoTabela || item.movimentoStr.includes(searchMovimentoTabela.toUpperCase());
             const searchEmitenteMatch = !searchEmitenteTabela || item.ug.includes(searchEmitenteTabela.toUpperCase());
             const searchUgNomeMatch = !searchUgNome || item.favorecido.includes(searchUgNome.toUpperCase());
             const searchEmpenhoMatch = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
@@ -1033,10 +1059,10 @@ function Dashboard() {
             const matchBloqueado = !fOnlyBloqueado || item.has_bloqueado;
             const matchCancelado = !fOnlyCancelado || item.has_cancelado;
 
-            return matchExistencia && matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && 
+            return matchExistencia && matchUg && matchFav && matchEmpenho && matchDoc && matchContrato && matchMovimentoTag &&
                    matchFiscal && matchGestor && matchFiscalSub && matchGestorSub && matchSecLog && matchCompra && matchModalidade &&
                    matchDiaDe && matchDiaAte && matchInicDe && matchInicAte && matchFDe && matchFAte && matchSitTag && 
-                   searchContratoTabelaMatch && searchSituacaoMatch && searchExistenciaMatch && searchEmitenteMatch && searchUgNomeMatch && searchEmpenhoMatch && 
+                   searchContratoTabelaMatch && searchSituacaoMatch && searchExistenciaMatch && searchMovimentoMatch && searchEmitenteMatch && searchUgNomeMatch && searchEmpenhoMatch && 
                    searchDocumentoMatch && searchObsMatch && searchObjetoMatch && searchGestorTMatch && searchModalidadeMatch && searchSecLogMatch &&
                    matchNum && matchDateCol && matchBloqueado && matchCancelado;
         });
@@ -1053,7 +1079,7 @@ function Dashboard() {
             });
         }
         return filtered;
-    }, [rawData, fExistencia, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
+    }, [rawData, fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
 
     const totalsMaster = useMemo(() => {
         let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
@@ -1263,10 +1289,7 @@ function Dashboard() {
             if(!item.contrato || item.contrato === "-") return;
             const key = `${item.contrato}|${item.empenho}`;
             if(!map[key]) {
-                map[key] = {
-                    contrato: item.contrato, empenho: item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity,
-                    docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set()
-                };
+                map[key] = { contrato: item.contrato, empenho: item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity, docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set() };
             }
             const m = map[key];
             if (item.documento.includes("RO") && item.diaVal > 0) { if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal; }
@@ -1348,7 +1371,7 @@ function Dashboard() {
 
     const exportMasterColumns = [
         { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, { header: "SITUAÇÃO", key: "situacao" }, { header: "EXISTÊNCIA", key: "existencia" },
-        { header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }, { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
+        { header: "MOVIMENTO", key: "movimentoStr" }, { header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }, { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
         { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" }, { header: "OBJETO", key: "objeto" },
         { header: "FISCAL", key: "fiscal" }, { header: "GESTOR", key: "gestor" }, { header: "SEC LOG", key: "sec_log" }, { header: "MODALIDADE", key: "modalidade" }, { header: "COMPRA", key: "compra" },
         { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" }, { header: "OBS", key: "obs" },
@@ -1409,8 +1432,21 @@ function Dashboard() {
                         <button onClick={() => toggleExistencia('CONTÁBIL')} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${fExistencia.includes('CONTÁBIL') ? tagColorsMap['SÓ EM CONTÁBIL'].css + ' border-transparent shadow-inner ring-2 ring-orange-400 ring-offset-1' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>SÓ CONTÁBIL</button>
                         
                         <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
-                        <button onClick={() => setFOnlyBloqueado(!fOnlyBloqueado)} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${fOnlyBloqueado ? 'bg-orange-600 text-white border-transparent ring-2 ring-orange-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>BLOQ</button>
-                        <button onClick={() => setFOnlyCancelado(!fOnlyCancelado)} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${fOnlyCancelado ? 'bg-red-600 text-white border-transparent ring-2 ring-red-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CAN</button>
+                        {['EMP', 'RCB', 'LIQ', 'PAG', 'BLOQ', 'CAN'].map(mov => {
+                            const isActive = fMovimento.includes(mov);
+                            let activeClass = '';
+                            if (mov === 'EMP') activeClass = 'bg-blue-600 text-white border-transparent ring-2 ring-blue-400 ring-offset-1';
+                            else if (mov === 'RCB') activeClass = 'bg-violet-600 text-white border-transparent ring-2 ring-violet-400 ring-offset-1';
+                            else if (mov === 'LIQ') activeClass = 'bg-amber-600 text-white border-transparent ring-2 ring-amber-400 ring-offset-1';
+                            else if (mov === 'PAG') activeClass = 'bg-emerald-600 text-white border-transparent ring-2 ring-emerald-400 ring-offset-1';
+                            else if (mov === 'BLOQ') activeClass = 'bg-orange-600 text-white border-transparent ring-2 ring-orange-400 ring-offset-1';
+                            else if (mov === 'CAN') activeClass = 'bg-red-600 text-white border-transparent ring-2 ring-red-400 ring-offset-1';
+                            return (
+                                <button key={mov} onClick={() => toggleMovimento(mov)} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isActive ? activeClass : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                                    {mov}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
                 
@@ -1525,7 +1561,7 @@ function Dashboard() {
                 </div>
 
                 <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-                    <h3 className="text-xs font-black text-slate-800 uppercase mb-4 pb-2 border-b border-slate-100">Matriz de Empenho e Documentos</h3>
+                    <h3 className="text-xs font-black text-slate-800 uppercase mb-4 pb-2 border-b border-slate-100">Matriz Operacional por Empenho</h3>
                     <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar" style={{ maxHeight: '550px' }}>
                         <table className="w-full text-left text-[9px] border-collapse relative">
                             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
@@ -1785,13 +1821,14 @@ function Dashboard() {
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                    <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', minWidth: '2600px' }}>
+                    <table className="text-left text-[10px] border-collapse relative" style={{ tableLayout: 'fixed', minWidth: '2700px' }}>
                         <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                             <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
                                 <DateFilterHeader widthClass="w-[5%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
                                 <TextHeader widthClass="w-[6%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
                                 <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacaoTabela} onSearchChange={setSearchSituacaoTabela} />
                                 <TextHeader widthClass="w-[5%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistenciaTabela} onSearchChange={setSearchExistenciaTabela} />
+                                <TextHeader widthClass="w-[6%]" label="MOVIMENTO" field="movimentoStr" current={sortConfig} onSort={handleSort} searchVal={searchMovimentoTabela} onSearchChange={setSearchMovimentoTabela} />
                                 <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
                                 <DateFilterHeader widthClass="w-[5%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />
                                 <NumericHeader widthClass="w-[6%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
@@ -1817,8 +1854,8 @@ function Dashboard() {
                                 <tr key={i} className="hover:bg-blue-50 transition-colors">
                                     <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
                                     <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                    <td className="p-2 align-top">
-                                        <div className="flex flex-wrap gap-1">
+                                    <td className="p-2 align-middle text-center">
+                                        <div className="flex flex-wrap items-center justify-center gap-1">
                                             {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
                                                 <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
                                             ))}
@@ -1828,6 +1865,13 @@ function Dashboard() {
                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${row.existencia === 'AMBAS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : row.existencia === 'GERAL' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-orange-100 text-orange-800 border border-orange-200'}`}>
                                             {row.existencia}
                                         </span>
+                                    </td>
+                                    <td className="p-2 align-middle text-center">
+                                        <div className="flex flex-wrap items-center justify-center gap-1">
+                                            {row.movimentoFlags && row.movimentoFlags.map((f, idx) => (
+                                                <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
+                                            ))}
+                                        </div>
                                     </td>
                                     <td className="p-2 align-middle text-center font-bold text-slate-600">
                                         {row.diasAss !== null ? (
