@@ -5,7 +5,6 @@ if (window.ChartDataLabels) {
     Chart.defaults.set('plugins.datalabels', { display: false });
 }
 
-// Plugin: Linha Tracejada Vermelha para os 50% do Gráfico de 100%
 const fiftyPercentLinePlugin = {
     id: 'fiftyPercentLinePlugin',
     afterDatasetsDraw: (chart) => {
@@ -19,7 +18,7 @@ const fiftyPercentLinePlugin = {
             ctx.beginPath();
             ctx.setLineDash([5, 5]);
             ctx.lineWidth = 2;
-            ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; // Vermelho
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'; 
             ctx.moveTo(xAxis.left, y50);
             ctx.lineTo(xAxis.right, y50);
             ctx.stroke();
@@ -29,7 +28,6 @@ const fiftyPercentLinePlugin = {
 };
 Chart.register(fiftyPercentLinePlugin);
 
-// Mapa de cores unificado para TAGS de Situação + Cross-Reference Relacional
 const tagColorsMap = {
     'ATIVO INEXEC': { css: 'bg-purple-700 text-white', hex: '#7e22ce' },
     'ATIVO EM EXEC': { css: 'bg-cyan-500 text-slate-900', hex: '#06b6d4' },
@@ -44,39 +42,30 @@ const tagColorsMap = {
     'SÓ EM CONTÁBIL': { css: 'bg-orange-900 text-white', hex: '#7c2d12' }
 };
 
-// =========================================================
-// MOTOR DE DESOFUSCAÇÃO HÍBRIDO E CONFIGURAÇÕES
-// =========================================================
 const _decode = (str) => {
     if (!str) return "";
     if (/^[01\s]+$/.test(str.trim())) {
-        try {
-            let binArr = str.includes(' ') ? str.trim().split(' ') : str.match(/.{1,8}/g);
-            return binArr.map(b => String.fromCharCode(parseInt(b, 2))).join('');
-        } catch(e) { return str; }
+        try { return str.trim().split(' ').map(b => String.fromCharCode(parseInt(b, 2))).join(''); } 
+        catch(e) { return str; }
     }
     return str; 
 };
 
 const SPREADSHEET_ID_CONTABIL = "1rRup03vk20FWxhbkClXBLVZ2X1N8AZpFyjevbkzP4-w"; 
 const RANGE_CONTABIL = "CONTROLE_EXEC_CONTR_DOC!A:K"; 
-
 const SPREADSHEET_ID_GERAL = "1Fuhb3HMRzg2kEozkuREFNKYSXtqUCLhZWFFuWM-f3v4"; 
 const RANGE_GERAL = "CONTROLE_EXEC_CONTR!A1:BR2000"; 
-
 const API_KEY = _decode("01000001 01001001 01111010 01100001 01010011 01111001 01000011 01001011 01110010 01110110 01100001 01101011 01101011 01000010 01001000 00111001 01101100 00110100 01010111 01100010 01010001 01001011 01001110 01110111 01101010 01010000 00110010 01010011 01010000 01001101 01001001 01101110 01110011 01101110 01110100 01000001 01101010 01100011 01000001");
-
 const API_URL_CONTABIL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_CONTABIL}/values/${RANGE_CONTABIL}?key=${API_KEY}`;
 const API_URL_GERAL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_GERAL}/values/${RANGE_GERAL}?key=${API_KEY}`;
 
-// =========================================================
-// NORMALIZADORES E FORMATAÇÃO
-// =========================================================
-const normalizeStr = (str) => {
-    if (!str) return "";
-    return str.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const cSupItemsList = ["SGLS-CLASSE I", "SGLFE-CLASSE II", "SGLC-CLASSE III", "SGLME-CLASSE V (MUN)"];
+const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const normalizeStr = (str) => str ? str.toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : "";
 const parseValue = (val) => {
     if (val === null || val === undefined || val === "") return 0;
     if (typeof val === 'number') return val;
@@ -84,7 +73,6 @@ const parseValue = (val) => {
     let isNegative = false;
     if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
     else if (str.startsWith('-')) { isNegative = true; str = str.slice(1); }
-
     if (str.includes(',')) { str = str.replace(/\./g, '').replace(',', '.'); } 
     else {
         const dotCount = (str.match(/\./g) || []).length;
@@ -92,13 +80,11 @@ const parseValue = (val) => {
         else if (dotCount === 1) { const parts = str.split('.'); if (parts[1].length === 3) str = str.replace('.', ''); }
     }
     let num = parseFloat(str);
-    if (isNaN(num)) return 0;
-    return isNegative ? -num : num;
+    return isNaN(num) ? 0 : (isNegative ? -num : num);
 };
 
 const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(v || 0);
 const formatPercentBR = (v) => new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0);
-
 const shortenNumber = (num) => {
     if (!num) return "0";
     if (num >= 1e9) return (num / 1e9).toFixed(1).replace('.', ',') + ' Bi';
@@ -106,7 +92,6 @@ const shortenNumber = (num) => {
     if (num >= 1e3) return (num / 1e3).toFixed(1).replace('.', ',') + ' Mil';
     return num.toString();
 };
-
 const parseDateBR = (dStr) => {
     if (!dStr || dStr === "-") return null;
     if (dStr.includes('-')) return new Date(dStr + "T00:00:00");
@@ -114,21 +99,15 @@ const parseDateBR = (dStr) => {
     if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
     return new Date(dStr);
 };
-
 const formatLabelMultiLine = (text, maxLength = 18) => {
     if (!text) return [""];
     let cleanText = text.replace(/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\s*-\s*/, '');
     if (cleanText.length <= maxLength) return [cleanText];
     const words = cleanText.split(' ');
-    let lines = [];
-    let currentLine = '';
+    let lines = []; let currentLine = '';
     words.forEach(word => {
-        if ((currentLine + word).length > maxLength) {
-            if (currentLine) lines.push(currentLine.trim());
-            currentLine = word + ' ';
-        } else {
-            currentLine += word + ' ';
-        }
+        if ((currentLine + word).length > maxLength) { if (currentLine) lines.push(currentLine.trim()); currentLine = word + ' '; } 
+        else { currentLine += word + ' '; }
     });
     if (currentLine) lines.push(currentLine.trim());
     if (lines.length > 2) return [lines[0], lines[1].substring(0, maxLength - 3) + '...'];
@@ -138,23 +117,12 @@ const formatLabelMultiLine = (text, maxLength = 18) => {
 const startResize = (e) => {
     const th = e.target.closest('th');
     if (!th) return;
-    const startX = e.pageX;
-    const startWidth = th.getBoundingClientRect().width;
-    const onMouseMove = (moveEvent) => {
-        const newWidth = Math.max(40, startWidth + moveEvent.pageX - startX);
-        th.style.width = `${newWidth}px`;
-    };
-    const onMouseUp = () => {
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-    };
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    const startX = e.pageX; const startWidth = th.getBoundingClientRect().width;
+    const onMouseMove = (moveEvent) => { th.style.width = `${Math.max(40, startWidth + moveEvent.pageX - startX)}px`; };
+    const onMouseUp = () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); };
+    document.addEventListener('mousemove', onMouseMove); document.addEventListener('mouseup', onMouseUp);
 };
 
-// =========================================================
-// MOTOR DE EXPORTAÇÃO GLOBAL
-// =========================================================
 const exportTable = {
     toExcel: (data, filename, columns) => {
         if (!window.XLSX) { alert("Biblioteca Excel não encontrada."); return; }
@@ -169,10 +137,8 @@ const exportTable = {
             });
             return obj;
         });
-        const ws = XLSX.utils.json_to_sheet(wsData);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Dados");
-        XLSX.writeFile(wb, `${filename}.xlsx`);
+        const ws = XLSX.utils.json_to_sheet(wsData); const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Dados"); XLSX.writeFile(wb, `${filename}.xlsx`);
     },
     toCSV: (data, filename, columns) => {
         let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
@@ -187,49 +153,28 @@ const exportTable = {
             });
             csvContent += r.join(";") + "\n";
         });
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `${filename}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent));
+        link.setAttribute("download", `${filename}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
     },
     toPDF: (data, filename, columns, title) => {
         if (!window.jspdf || !window.jspdf.jsPDF) { alert("Biblioteca PDF não encontrada."); return; }
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('l', 'pt', 'a4'); 
-        doc.setFontSize(14);
-        doc.text(title, 40, 30);
-        
+        const { jsPDF } = window.jspdf; const doc = new jsPDF('l', 'pt', 'a4'); 
+        doc.setFontSize(14); doc.text(title, 40, 30);
         const tableHead = [columns.map(c => c.header)];
-        const tableBody = data.map(row => {
-            return columns.map(c => {
-                let val = c.key === 'situacao' ? row.situacao : row[c.key];
-                if (val === null || val === undefined) return "-";
-                if (c.isCurrency) return formatBRL(val);
-                if (c.isPercent) return formatPercentBR(val);
-                return val.toString();
-            });
-        });
-
-        doc.autoTable({
-            head: tableHead, body: tableBody, startY: 40,
-            styles: { fontSize: 5, cellPadding: 2, overflow: 'linebreak' },
-            headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
-            margin: { top: 20, left: 10, right: 10 }
-        });
+        const tableBody = data.map(row => columns.map(c => {
+            let val = c.key === 'situacao' ? row.situacao : row[c.key];
+            if (val === null || val === undefined) return "-";
+            if (c.isCurrency) return formatBRL(val);
+            if (c.isPercent) return formatPercentBR(val);
+            return val.toString();
+        }));
+        doc.autoTable({ head: tableHead, body: tableBody, startY: 40, styles: { fontSize: 5, cellPadding: 2, overflow: 'linebreak' }, headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] }, margin: { top: 20, left: 10, right: 10 } });
         doc.save(`${filename}.pdf`);
     }
 };
 
-// =========================================================
-// COMPONENTES REUTILIZÁVEIS
-// =========================================================
 function AutoFitText({ text, className }) {
-    const containerRef = useRef(null);
-    const textRef = useRef(null);
-
+    const containerRef = useRef(null); const textRef = useRef(null);
     useEffect(() => {
         const resize = () => {
             if (containerRef.current && textRef.current) {
@@ -242,26 +187,18 @@ function AutoFitText({ text, className }) {
                 }
             }
         };
-        resize(); setTimeout(resize, 50); 
-        window.addEventListener('resize', resize);
+        resize(); setTimeout(resize, 50); window.addEventListener('resize', resize);
         return () => window.removeEventListener('resize', resize);
     }, [text]);
-
-    return (
-        <div ref={containerRef} className="w-full overflow-hidden flex items-center">
-            <div ref={textRef} className={`${className} origin-left whitespace-nowrap inline-block`}>{text}</div>
-        </div>
-    );
+    return (<div ref={containerRef} className="w-full overflow-hidden flex items-center"><div ref={textRef} className={`${className} origin-left whitespace-nowrap inline-block`}>{text}</div></div>);
 }
 
 const ChartComponent = ({ type, data, options, id }) => {
-    const canvasRef = useRef(null);
-    const chartInstance = useRef(null);
+    const canvasRef = useRef(null); const chartInstance = useRef(null);
     useEffect(() => {
         if (!canvasRef.current) return;
         if (chartInstance.current) chartInstance.current.destroy();
-        const ctx = canvasRef.current.getContext('2d');
-        chartInstance.current = new Chart(ctx, { type, data, options });
+        chartInstance.current = new Chart(canvasRef.current.getContext('2d'), { type, data, options });
         return () => { if (chartInstance.current) chartInstance.current.destroy(); };
     }, [data, options, type]);
     return <canvas ref={canvasRef} id={id}></canvas>;
@@ -295,7 +232,7 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const docDate = new Date(latestTimestamp); docDate.setHours(0, 0, 0, 0);
         const diffDays = Math.floor((today - docDate) / 86400000);
-        return `(${diffDays} dia${diffDays === 1 ? '' : 's'} até hoje)`;
+        return `(${diffDays} dia${diffDays === 1 ? '' : 's'})`;
     }, [latestTimestamp]);
 
     if (!docs || docs.length === 0) return (
@@ -308,7 +245,7 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
         <div className={`p-4 rounded-2xl shadow-sm border border-t-4 bg-white flex flex-col h-full max-h-[300px] hover:shadow-md transition ${colorClass.split(' ')[0]}`}>
             <div className="flex justify-between items-start mb-3 shrink-0 gap-2">
                 <h4 className={`text-[10px] font-black uppercase tracking-widest ${colorClass.split(' ')[1]}`}>{title}</h4>
-                <div className="text-[8.5px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-right whitespace-nowrap">Último: {latestDateStr} {daysText}</div>
+                <div className="text-[8.5px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-right whitespace-nowrap">Data: {latestDateStr} {daysText}</div>
             </div>
             <div className="flex flex-col gap-2 overflow-y-auto flex-1 pr-1 custom-scrollbar">
                 {docs.map((doc, idx) => (
@@ -316,7 +253,9 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
                         <div className="flex flex-col w-2/3 pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{doc.dia}</span>
-                                <span className="text-[11px] font-black text-slate-700 truncate" title={doc.documento}>{doc.documento}</span>
+                                <span className="text-[11px] font-black text-slate-700 truncate" title={`${doc.documento} | Contrato: ${doc.contrato}`}>
+                                    {doc.documento} <span className="text-[9px] text-slate-400 font-bold ml-1">({doc.contrato})</span>
+                                </span>
                             </div>
                             {showEmitente && <span className="text-[9px] font-bold text-slate-500 truncate mt-0.5" title={doc.ug}>{doc.ug}</span>}
                         </div>
@@ -336,19 +275,15 @@ function TextHeader({ label, field, current, onSort, align="left", searchVal, on
             <div className={`flex items-center gap-1 cursor-pointer hover:text-blue-500 justify-${align === 'right' ? 'end' : align === 'center' ? 'center' : 'start'}`} onClick={() => onSort(field)}>
                 {label} <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
             </div>
-            {onSearchChange !== undefined && (
-                <input type="text" placeholder="Buscar..." value={searchVal} onChange={(e) => onSearchChange(e.target.value)} onClick={(e) => e.stopPropagation()} className="mt-2 w-full px-1 py-1 text-slate-800 text-[9px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
-            )}
+            {onSearchChange !== undefined && <input type="text" placeholder="Buscar..." value={searchVal} onChange={(e) => onSearchChange(e.target.value)} onClick={(e) => e.stopPropagation()} className="mt-2 w-full px-1 py-1 text-slate-800 text-[9px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />}
         </th>
     );
 }
 
 function NumericHeader({ label, field, current, onSort, numFilters, setNumFilters, align="left", widthClass }) {
     const isSorted = current.key === field;
-    const filterMin = numFilters[field] ? numFilters[field].min : '';
-    const filterMax = numFilters[field] ? numFilters[field].max : '';
-    const handleMin = (e) => { const val = e.target.value; setNumFilters(p => { const n = {...p}; n[field] = {...n[field], min: val}; return n; }); };
-    const handleMax = (e) => { const val = e.target.value; setNumFilters(p => { const n = {...p}; n[field] = {...n[field], max: val}; return n; }); };
+    const handleMin = (e) => setNumFilters(p => ({ ...p, [field]: { ...p[field], min: e.target.value } }));
+    const handleMax = (e) => setNumFilters(p => ({ ...p, [field]: { ...p[field], max: e.target.value } }));
     return (
         <th className={`p-2 transition text-${align} bg-slate-50 relative group ${widthClass || 'w-auto'}`}>
             <div onMouseDown={startResize} className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-transparent hover:bg-blue-400 z-20"></div>
@@ -356,8 +291,8 @@ function NumericHeader({ label, field, current, onSort, numFilters, setNumFilter
                 {label} <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
             </div>
             <div className="flex flex-col gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
-                <input type="number" placeholder="< Max" value={filterMax} onChange={handleMax} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
-                <input type="number" placeholder="> Min" value={filterMin} onChange={handleMin} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
+                <input type="number" placeholder="< Max" value={numFilters[field] ? numFilters[field].max : ''} onChange={handleMax} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
+                <input type="number" placeholder="> Min" value={numFilters[field] ? numFilters[field].min : ''} onChange={handleMin} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
             </div>
         </th>
     );
@@ -365,10 +300,8 @@ function NumericHeader({ label, field, current, onSort, numFilters, setNumFilter
 
 function DateFilterHeader({ label, field, current, onSort, dateFilters, setDateFilters, align="left", widthClass }) {
     const isSorted = current.key === field;
-    const filterMin = dateFilters[field] ? dateFilters[field].min : '';
-    const filterMax = dateFilters[field] ? dateFilters[field].max : '';
-    const handleMin = (e) => { const val = e.target.value; setDateFilters(p => ({...p, [field]: {...p[field], min: val}})); };
-    const handleMax = (e) => { const val = e.target.value; setDateFilters(p => ({...p, [field]: {...p[field], max: val}})); };
+    const handleMin = (e) => setDateFilters(p => ({ ...p, [field]: { ...p[field], min: e.target.value } }));
+    const handleMax = (e) => setDateFilters(p => ({ ...p, [field]: { ...p[field], max: e.target.value } }));
     return (
         <th className={`p-2 transition text-${align} bg-slate-50 relative group ${widthClass || 'w-auto'}`}>
             <div onMouseDown={startResize} className="absolute right-0 top-0 bottom-0 w-[4px] cursor-col-resize bg-transparent hover:bg-blue-400 z-20"></div>
@@ -376,8 +309,8 @@ function DateFilterHeader({ label, field, current, onSort, dateFilters, setDateF
                 {label} <span className="text-[8px] text-slate-400">{isSorted ? (current.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
             </div>
             <div className="flex flex-col gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
-                <input type="date" title="A partir de (Mínimo)" value={filterMin} onChange={handleMin} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
-                <input type="date" title="Até (Máximo)" value={filterMax} onChange={handleMax} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
+                <input type="date" title="A partir de (Mínimo)" value={dateFilters[field] ? dateFilters[field].min : ''} onChange={handleMin} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
+                <input type="date" title="Até (Máximo)" value={dateFilters[field] ? dateFilters[field].max : ''} onChange={handleMax} className="w-full px-1 py-1 text-slate-800 text-[8px] font-normal rounded border border-slate-300 outline-none focus:border-blue-500 shadow-inner" />
             </div>
         </th>
     );
@@ -488,7 +421,7 @@ function DocStatCard({ title, count, date, timestamp }) {
 // =========================================================
 // COMPONENTE: SUBTABELA DETALHADA
 // =========================================================
-function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor }) {
+function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor, showDiasAss = false }) {
     const [limit, setLimit] = useState(100);
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
     
@@ -501,7 +434,7 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
     const [searchObs, setSearchObs] = useState("");
     const [searchEmitente, setSearchEmitente] = useState("");
     
-    const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''}, perc_tempo: {min:'', max:''} });
+    const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''}, perc_tempo: {min:'', max:''}, diasAss: {min:'', max:''} });
     const [dateFilters, setDateFilters] = useState({ dia: {min:'', max:''}, data_inic: {min:'', max:''}, data_fim: {min:'', max:''} });
 
     const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
@@ -522,8 +455,13 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
 
             let matchNum = true;
             for (const key in numFilters) {
-                if (numFilters[key] && numFilters[key].min !== '' && (key.startsWith('p_') ? item[key]*100 : item[key]) < parseFloat(numFilters[key].min)) { matchNum = false; break; }
-                if (numFilters[key] && numFilters[key].max !== '' && (key.startsWith('p_') ? item[key]*100 : item[key]) > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                if (numFilters[key] && (numFilters[key].min !== '' || numFilters[key].max !== '')) {
+                    let val = item[key];
+                    if (val === null || val === undefined) { matchNum = false; break; }
+                    if (key.startsWith('p_')) val = val * 100;
+                    if (numFilters[key].min !== '' && val < parseFloat(numFilters[key].min)) { matchNum = false; break; }
+                    if (numFilters[key].max !== '' && val > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                }
             }
 
             let matchDateCol = true;
@@ -546,6 +484,9 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
         if (sortConfig.key) {
             filtered.sort((a, b) => {
                 let valA = a[sortConfig.key], valB = b[sortConfig.key];
+                if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
+                else if (sortConfig.key === 'data_fim') { valA = a.dtFimVal; valB = b.dtFimVal; }
+                if (valA === null) valA = -Number.MAX_VALUE; if (valB === null) valB = -Number.MAX_VALUE;
                 if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -560,6 +501,7 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
 
     const exportColumns = [
         { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, { header: "SITUAÇÃO", key: "situacao" }, { header: "EXISTÊNCIA", key: "existencia" },
+        ...(showDiasAss ? [{ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }] : []),
         { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
         { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" },
         { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
@@ -577,13 +519,14 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                 </div>
             </div>
             <div className="overflow-x-auto overflow-y-auto flex-1">
-                <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: '1600px' }}>
+                <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: showDiasAss ? '1700px' : '1600px' }}>
                     <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                         <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
                             <DateFilterHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
                             <TextHeader widthClass="w-[7%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
                             <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacao} onSearchChange={setSearchSituacao} />
                             <TextHeader widthClass="w-[6%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistencia} onSearchChange={setSearchExistencia} />
+                            {showDiasAss && <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
                             <DateFilterHeader widthClass="w-[6%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />
                             <NumericHeader widthClass="w-[7%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
                             <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitente} onSearchChange={setSearchEmitente} />
@@ -611,6 +554,15 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                                         {row.existencia}
                                     </span>
                                 </td>
+                                {showDiasAss && (
+                                    <td className="p-2 align-middle text-center font-bold text-slate-600">
+                                        {row.diasAss !== null ? (
+                                            <span className={`px-1.5 py-0.5 rounded ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                {row.diasAss} d
+                                            </span>
+                                        ) : "-"}
+                                    </td>
+                                )}
                                 <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
                                     <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
                                     <div className="text-[9px] mt-1 text-slate-600">Fim: {row.data_fim || "-"}</div>
@@ -640,7 +592,7 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                     </tbody>
                     <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                         <tr className="text-slate-700 uppercase font-black">
-                            <td colSpan="11" className="p-2 text-right">TOTAL DA MÉTRICA:</td>
+                            <td colSpan={showDiasAss ? 12 : 11} className="p-2 text-right">TOTAL DA MÉTRICA:</td>
                             <td className={`p-2 text-right ${textColor}`}>{formatBRL(totalMetric)}</td>
                         </tr>
                     </tfoot>
@@ -656,17 +608,18 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
 }
 
 // =========================================================
-// DASHBOARD MASTER CONTÁBIL (COM API JOIN GERAL)
+// DASHBOARD MASTER CONTÁBIL
 // =========================================================
 function Dashboard() {
     const [rawData, setRawData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState("A processar conexão...");
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-    
-    const [top20Sort, setTop20Sort] = useState('valor_desc');
+    const currentUser = localStorage.getItem('user_Contabil') || 'Usuário';
+
+    const [top20Sort, setTop20Sort] = useState('emp_desc');
     const [top20ViewMode, setTop20ViewMode] = useState('favorecido');
-    const [top20100Sort, setTop20100Sort] = useState('valor_desc');
+    const [top20100Sort, setTop20100Sort] = useState('emp_desc');
     const [top20100ViewMode, setTop20100ViewMode] = useState('favorecido');
 
     const [fSituacaoTags, setFSituacaoTags] = useState([]);
@@ -680,7 +633,7 @@ function Dashboard() {
     const [fGestor, setFGestor] = useState([]);
     const [fFiscalSub, setFFiscalSub] = useState([]);
     const [fGestorSub, setFGestorSub] = useState([]);
-    const [fSecLog, setFSecLog] = useState([]);
+    const [fSecLog, setFSecLog] = useState(cSupItemsList);
     const [fCompra, setFCompra] = useState([]);
     const [fModalidade, setFModalidade] = useState([]);
 
@@ -688,7 +641,7 @@ function Dashboard() {
     const [dDiaAte, setDDiaAte] = useState("");
     const [dInicDe, setDInicDe] = useState("");
     const [dInicAte, setDInicAte] = useState("");
-    const [dFimDe, setDFimDe] = useState("");
+    const [dFimDe, setDFimDe] = useState(getTodayStr());
     const [dFimAte, setDFimAte] = useState("");
 
     const [searchContratoTabela, setSearchContratoTabela] = useState("");
@@ -711,45 +664,41 @@ function Dashboard() {
     const [areaAggLevel, setAreaAggLevel] = useState('mes');
     const [barAggLevel, setBarAggLevel] = useState('mes');
 
+    const [matrixSort, setMatrixSort] = useState({ key: 'sortVal', direction: 'asc' });
+
     const initialNumFilters = {
         v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
         v_liquidado: {min:'', max:''}, v_pago: {min:'', max:''},
         v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''},
-        perc_tempo: {min:'', max:''}
+        perc_tempo: {min:'', max:''}, diasAss: {min:'', max:''}
     };
     const [numFilters, setNumFilters] = useState(initialNumFilters);
     const [dateFilters, setDateFilters] = useState({ dia: {min:'', max:''}, data_inic: {min:'', max:''}, data_fim: {min:'', max:''} });
 
     const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
+    const handleMatrixSort = (key) => setMatrixSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
 
-    const toggleSituacaoTag = (lbl) => {
-        setFSituacaoTags(prev => prev.includes(lbl) ? prev.filter(x => x !== lbl) : [...prev, lbl]);
-    };
+    const toggleSituacaoTag = (lbl) => { setFSituacaoTags(prev => prev.includes(lbl) ? prev.filter(x => x !== lbl) : [...prev, lbl]); };
+    const toggleExistencia = (val) => { setFExistencia(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); };
 
-    const toggleExistencia = (val) => {
-        setFExistencia(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
-    };
+    const isCSupActive = fSecLog.length === 4 && cSupItemsList.every(i => fSecLog.includes(i));
+    const toggleCSup = () => { if (isCSupActive) setFSecLog([]); else setFSecLog(cSupItemsList); };
 
-    const cSupItems = ["SGLS-CLASSE I", "SGLFE-CLASSE II", "SGLC-CLASSE III", "SGLME-CLASSE V (MUN)"];
-    const isCSupActive = fSecLog.length === 4 && cSupItems.every(i => fSecLog.includes(i));
-    const toggleCSup = () => { if (isCSupActive) setFSecLog([]); else setFSecLog(cSupItems); };
+    const todayD = new Date();
+    const ts = `${todayD.getFullYear()}-${String(todayD.getMonth()+1).padStart(2,'0')}-${String(todayD.getDate()).padStart(2,'0')}`;
+    const p7 = new Date(); p7.setDate(todayD.getDate() - 7);
+    const ps7 = `${p7.getFullYear()}-${String(p7.getMonth()+1).padStart(2,'0')}-${String(p7.getDate()).padStart(2,'0')}`;
+    const is7DiasActive = dDiaDe === ps7 && dDiaAte === ts;
 
-    const toggleAte7Dias = () => {
-        const t = new Date(); const p = new Date(); p.setDate(t.getDate() - 7);
-        const ts = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
-        const ps = `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}-${String(p.getDate()).padStart(2,'0')}`;
-        if (dDiaDe === ps && dDiaAte === ts) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps); setDDiaAte(ts); }
-    };
-    const toggleAte30Dias = () => {
-        const t = new Date(); const p = new Date(); p.setDate(t.getDate() - 30);
-        const ts = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
-        const ps = `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}-${String(p.getDate()).padStart(2,'0')}`;
-        if (dDiaDe === ps && dDiaAte === ts) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps); setDDiaAte(ts); }
-    };
+    const p30 = new Date(); p30.setDate(todayD.getDate() - 30);
+    const ps30 = `${p30.getFullYear()}-${String(p30.getMonth()+1).padStart(2,'0')}-${String(p30.getDate()).padStart(2,'0')}`;
+    const is30DiasActive = dDiaDe === ps30 && dDiaAte === ts;
 
-    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
-    const isContratosVigentesActive = dFimDe === todayStr;
-    const toggleContratosVigentes = () => { if (isContratosVigentesActive) setDFimDe(""); else setDFimDe(todayStr); };
+    const toggleAte7Dias = () => { if (is7DiasActive) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps7); setDDiaAte(ts); } };
+    const toggleAte30Dias = () => { if (is30DiasActive) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps30); setDDiaAte(ts); } };
+
+    const isContratosVigentesActive = dFimDe === ts;
+    const toggleContratosVigentes = () => { if (isContratosVigentesActive) setDFimDe(""); else setDFimDe(ts); };
 
     useEffect(() => { setVisibleRows(100); }, [fExistencia, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, sortConfig, fOnlyBloqueado, fOnlyCancelado]);
 
@@ -778,15 +727,13 @@ function Dashboard() {
     }, [rawData]);
 
     const applyFilterUltimoDia = () => { if (maxDateInfo.iso) { setDDiaDe(maxDateInfo.iso); setDDiaAte(maxDateInfo.iso); } };
-
-    const logout = () => window.location.reload();
+    const logout = () => { try { localStorage.removeItem('isAuth_Contabil'); localStorage.removeItem('user_Contabil'); } catch(e){} window.location.reload(); };
 
     const processMergedData = (contabilRows, geralRows = []) => {
         if (!contabilRows || contabilRows.length < 2) { setStatus("Planilha Contábil vazia ou sem dados válidos."); setLoading(false); return; }
         setStatus("A estruturar matriz de relacionamento de dados...");
         const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-        // 1. Dicionário da API Geral
         const geralDict = {};
         if (geralRows && geralRows.length > 1) {
             const hGeral = geralRows[0];
@@ -871,7 +818,6 @@ function Dashboard() {
             }
         }
 
-        // 2. Processar a Base Contábil Enriquecendo com o Dicionário
         const headersContabil = contabilRows[0];
         const hMapC = {}; headersContabil.forEach((h, i) => { if(h) hMapC[normalizeStr(h)] = i; });
         const getVC = (exactNames, fallbackKeywords, row) => {
@@ -882,6 +828,7 @@ function Dashboard() {
 
         const grouped = {};
         const contratosEncontrados = new Set();
+        const minRoDict = {};
 
         for (let i = 1; i < contabilRows.length; i++) {
             const row = contabilRows[i];
@@ -912,13 +859,19 @@ function Dashboard() {
             if (!valStr && row.length > 0) { for(let c = row.length - 1; c >= 0; c--) { let t = parseValue(row[c]); if (t !== 0) { valStr = row[c]; break; } } }
 
             const valor = parseValue(valStr);
+            const diaVal = parseDateBR(dia) ? parseDateBR(dia).getTime() : 0;
             const key = `${dia}|${ug}|${fav}|${empenho}|${doc}|${contrato}`;
+
+            if (doc.includes("RO") && diaVal > 0 && contrato !== "-") {
+                const keyRE = `${contrato}|${empenho}`;
+                if (!minRoDict[keyRE] || diaVal < minRoDict[keyRE]) minRoDict[keyRE] = diaVal;
+            }
 
             if (!grouped[key]) {
                 const metadadosContrato = geralDict[contrato];
                 
                 grouped[key] = {
-                    dia, diaVal: parseDateBR(dia) ? parseDateBR(dia).getTime() : 0,
+                    dia, diaVal,
                     ug, favorecido: fav, empenho, documento: doc, obs, contrato,
                     fiscal: metadadosContrato ? metadadosContrato.fiscal : 'N/I', 
                     gestor: metadadosContrato ? metadadosContrato.gestor : 'N/I', 
@@ -938,6 +891,7 @@ function Dashboard() {
                     perc_tempo: metadadosContrato ? metadadosContrato.perc_tempo : null,
                     encerrando_dias: metadadosContrato ? metadadosContrato.encerrando_dias : null, 
                     objeto: metadadosContrato ? metadadosContrato.objeto : '-',
+                    diasAss: null, 
                     v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0,
                     has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false
                 };
@@ -951,7 +905,6 @@ function Dashboard() {
             else if (info.includes("BLOQUEADO")) { grouped[key].v_bloqueado += valor; grouped[key].has_bloqueado = true; }
         }
 
-        // 3. Adicionar Lançamentos "SÓ EM GERAL" (Contratos não encontrados na API Contábil)
         Object.keys(geralDict).forEach(contratoGeral => {
             if (!contratosEncontrados.has(contratoGeral)) {
                 const meta = geralDict[contratoGeral];
@@ -964,9 +917,20 @@ function Dashboard() {
                     existencia: 'GERAL',
                     data_inic: meta.data_inic, data_fim: meta.data_fim, dtInicVal: meta.dtInicVal, dtFimVal: meta.dtFimVal,
                     dias_passaram: meta.dias_passaram, perc_tempo: meta.perc_tempo, encerrando_dias: meta.encerrando_dias,
+                    diasAss: null, 
                     v_empenhado: 0, v_recebido: 0, v_liquidado: 0, v_pago: 0, v_cancelado: 0, v_bloqueado: 0,
                     has_empenhado: false, has_recebido: false, has_liquidado: false, has_pago: false, has_cancelado: false, has_bloqueado: false
                 };
+            }
+        });
+
+        Object.values(grouped).forEach(g => {
+            if (g.existencia !== 'GERAL' && g.contrato !== '-' && g.empenho !== '-') {
+                const minRo = minRoDict[`${g.contrato}|${g.empenho}`];
+                if (minRo && g.dtInicVal) { g.diasAss = Math.floor((g.dtInicVal - minRo) / 86400000); } 
+                else { g.diasAss = null; }
+            } else {
+                g.diasAss = null;
             }
         });
         
@@ -1043,8 +1007,13 @@ function Dashboard() {
 
             let matchNum = true;
             for (const key in numFilters) {
-                if (numFilters[key].min !== '' && (key.startsWith('p_') ? item[key]*100 : item[key]) < parseFloat(numFilters[key].min)) { matchNum = false; break; }
-                if (numFilters[key].max !== '' && (key.startsWith('p_') ? item[key]*100 : item[key]) > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                if (numFilters[key] && (numFilters[key].min !== '' || numFilters[key].max !== '')) {
+                    let val = item[key];
+                    if (val === null || val === undefined) { matchNum = false; break; }
+                    if (key.startsWith('p_')) val = val * 100;
+                    if (numFilters[key].min !== '' && val < parseFloat(numFilters[key].min)) { matchNum = false; break; }
+                    if (numFilters[key].max !== '' && val > parseFloat(numFilters[key].max)) { matchNum = false; break; }
+                }
             }
 
             let matchDateCol = true;
@@ -1077,6 +1046,7 @@ function Dashboard() {
                 let valA = a[sortConfig.key], valB = b[sortConfig.key];
                 if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
                 else if (sortConfig.key === 'data_fim') { valA = a.dtFimVal; valB = b.dtFimVal; }
+                if (valA === null) valA = -Number.MAX_VALUE; if (valB === null) valB = -Number.MAX_VALUE;
                 if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -1170,6 +1140,7 @@ function Dashboard() {
             else if (viewMode === 'favorecido') key = item.favorecido;
             else if (viewMode === 'empenho') key = item.empenho;
             else if (viewMode === 'ano') { const origem = contratoAnoOrigem[item.contrato]; key = origem ? origem.ano.toString() : 'N/I'; }
+            else if (viewMode === 'sec_log') key = item.sec_log;
 
             if (!map[key]) {
                 map[key] = { label: key, contratos: new Set(), empenhado: 0, recebido: 0, liquidado: 0, pago: 0, bloqueado: 0, cancelado: 0, favorecido: item.favorecido, contrato: item.contrato };
@@ -1186,9 +1157,15 @@ function Dashboard() {
 
         let arr = Object.values(map).map(d => ({ ...d, count: d.contratos.size }));
 
-        if (sortMode === 'valor_desc') arr.sort((a, b) => b.empenhado - a.empenhado);
+        if (sortMode === 'emp_desc') arr.sort((a, b) => b.empenhado - a.empenhado);
+        else if (sortMode === 'rec_desc') arr.sort((a, b) => b.recebido - a.recebido);
+        else if (sortMode === 'liq_desc') arr.sort((a, b) => b.liquidado - a.liquidado);
+        else if (sortMode === 'pag_desc') arr.sort((a, b) => b.pago - a.pago);
+        else if (sortMode === 'can_desc') arr.sort((a, b) => b.cancelado - a.cancelado);
+        else if (sortMode === 'bloq_desc') arr.sort((a, b) => b.bloqueado - a.bloqueado);
         else if (sortMode === 'qtd_desc') arr.sort((a, b) => b.count - a.count);
         else if (sortMode === 'nome_asc') arr.sort((a, b) => a.label.localeCompare(b.label));
+        else arr.sort((a, b) => b.empenhado - a.empenhado);
 
         return arr.slice(0, 20);
     };
@@ -1261,13 +1238,86 @@ function Dashboard() {
     const latestDocs = useMemo(() => {
         const getLatestList = (field) => {
             const hasField = field.replace('v_', 'has_');
-            const validDocs = filteredData.filter(d => d[hasField]);
+            const validDocs = filteredData.filter(d => d[hasField] && d.diaVal !== 0);
             if (validDocs.length === 0) return [];
             const maxVal = Math.max(...validDocs.map(d => d.diaVal));
             return validDocs.filter(d => d.diaVal === maxVal).sort((a, b) => b[field] - a[field]).slice(0, 10);
         };
         return { empenhado: getLatestList('v_empenhado'), recebido: getLatestList('v_recebido'), liquidado: getLatestList('v_liquidado'), pago: getLatestList('v_pago') };
     }, [filteredData]);
+
+    const primeirosDocs = useMemo(() => {
+        const getFirstList = (field) => {
+            const hasField = field.replace('v_', 'has_');
+            const validDocs = filteredData.filter(d => d[hasField] && d.diaVal !== 0);
+            if (validDocs.length === 0) return [];
+            const minVal = Math.min(...validDocs.map(d => d.diaVal));
+            return validDocs.filter(d => d.diaVal === minVal).sort((a, b) => b[field] - a[field]).slice(0, 10);
+        };
+        return { empenhado: getFirstList('v_empenhado'), recebido: getFirstList('v_recebido'), liquidado: getFirstList('v_liquidado'), pago: getFirstList('v_pago') };
+    }, [filteredData]);
+
+    const matrixData = useMemo(() => {
+        const map = {};
+        filteredData.forEach(item => {
+            if(!item.contrato || item.contrato === "-") return;
+            const key = `${item.contrato}|${item.empenho}`;
+            if(!map[key]) {
+                map[key] = {
+                    contrato: item.contrato, empenho: item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity,
+                    docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set()
+                };
+            }
+            const m = map[key];
+            if (item.documento.includes("RO") && item.diaVal > 0) { if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal; }
+            if (item.has_empenhado) m.docs_emp.add(item.documento);
+            if (item.has_recebido) m.docs_rec.add(item.documento);
+            if (item.has_liquidado) m.docs_liq.add(item.documento);
+            if (item.has_pago) m.docs_pag.add(item.documento);
+        });
+
+        let arr = Object.values(map).map(m => {
+            let diasAss = null;
+            if (m.min_ro_val !== Infinity && m.dtInicVal) { diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000); }
+            return { contrato: m.contrato, empenho: m.empenho, diasAss: diasAss, qtd_emp: m.docs_emp.size, qtd_rec: m.docs_rec.size, qtd_liq: m.docs_liq.size, qtd_pag: m.docs_pag.size, sortVal: m.min_ro_val !== Infinity ? m.min_ro_val : Number.MAX_SAFE_INTEGER };
+        });
+
+        arr.sort((a, b) => {
+            let valA = a[matrixSort.key], valB = b[matrixSort.key];
+            if (matrixSort.key === 'diasAss') {
+                valA = valA !== null ? valA : (matrixSort.direction === 'asc' ? Infinity : -Infinity);
+                valB = valB !== null ? valB : (matrixSort.direction === 'asc' ? Infinity : -Infinity);
+            }
+            if (valA < valB) return matrixSort.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return matrixSort.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return arr.slice(0, 50);
+    }, [filteredData, matrixSort]);
+
+    const matrixTotals = useMemo(() => {
+        let sumEmp = 0, sumRec = 0, sumLiq = 0, sumPag = 0;
+        let sumDias = 0, countDias = 0;
+        matrixData.forEach(row => {
+            sumEmp += row.qtd_emp; sumRec += row.qtd_rec; sumLiq += row.qtd_liq; sumPag += row.qtd_pag;
+            if (row.diasAss !== null && row.diasAss >= 0) { sumDias += row.diasAss; countDias++; }
+        });
+        const mediaDias = countDias > 0 ? (sumDias / countDias).toFixed(1) : '-';
+        return { sumEmp, sumRec, sumLiq, sumPag, mediaDias };
+    }, [matrixData]);
+
+    const renderMatrixHeader = (label, key, extraClass = "") => {
+        const isSorted = matrixSort.key === key;
+        return (
+            <th className={`p-3 whitespace-nowrap cursor-pointer hover:bg-slate-200 transition ${extraClass}`} onClick={() => handleMatrixSort(key)}>
+                <div className="flex items-center gap-1 justify-center">
+                    {label}
+                    <span className="text-[8px] text-slate-400">{isSorted ? (matrixSort.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </div>
+            </th>
+        );
+    };
 
     const docCounts = useMemo(() => {
         const uniqueDocs = (field) => new Set(filteredData.filter(d => d[field.replace('v_', 'has_')]).map(d => d.documento)).size;
@@ -1298,7 +1348,7 @@ function Dashboard() {
 
     const exportMasterColumns = [
         { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, { header: "SITUAÇÃO", key: "situacao" }, { header: "EXISTÊNCIA", key: "existencia" },
-        { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
+        { header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }, { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
         { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" }, { header: "OBJETO", key: "objeto" },
         { header: "FISCAL", key: "fiscal" }, { header: "GESTOR", key: "gestor" }, { header: "SEC LOG", key: "sec_log" }, { header: "MODALIDADE", key: "modalidade" }, { header: "COMPRA", key: "compra" },
         { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" }, { header: "OBS", key: "obs" },
@@ -1321,12 +1371,13 @@ function Dashboard() {
                     <p className={`text-[11px] font-bold mt-1 ${status.includes("Erro") || status.includes("falhou") || status.includes("ausente") || status.includes("Carga Manual") ? "text-red-600" : "text-emerald-600"}`}>● {status}</p>
                     <p className="text-[11px] italic text-blue-600 mt-0.5">Produzido por Cel Brito.</p>
                 </div>
-                <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-lg border shadow-sm">
+                <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-lg border shadow-sm flex-wrap justify-end">
                     <span className="text-[10px] font-black text-slate-400 uppercase">Carga Manual (Contábil):</span>
                     <input type="file" accept=".csv" onChange={(e) => { const r = new FileReader(); r.onload = (ev) => loadData(ev.target.result); r.readAsText(e.target.files[0]); }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
-                    <div className="w-[1px] h-6 bg-slate-300 mx-1"></div>
+                    <div className="w-[1px] h-6 bg-slate-300 mx-1 hidden sm:block"></div>
                     <button onClick={() => loadData()} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition">SINCRONIZAR APIs</button>
-                    <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition">SAIR</button>
+                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span></span>
+                    <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition ml-2">SAIR</button>
                 </div>
             </header>
 
@@ -1334,8 +1385,16 @@ function Dashboard() {
                 <h2 className="text-xs font-black uppercase tracking-widest text-[#99bbd4] mb-4">Filtros Dinâmicos (Integrados)</h2>
                 
                 <div className="mb-4 pb-4 border-b border-slate-100 flex flex-col gap-3">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Especiais e Ações Rápidas:</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ações Rápidas (Tempo e Status):</span>
                     <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={toggleCSup} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isCSupActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>C SUP</button>
+                        <button onClick={toggleContratosVigentes} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContratosVigentesActive ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTRATOS VIGENTES</button>
+                        <button onClick={toggleAte7Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${is7DiasActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>DOC 7 DIAS ATRÁS</button>
+                        <button onClick={toggleAte30Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${is30DiasActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>DOC 30 DIAS ATRÁS</button>
+                        <button onClick={applyFilterUltimoDia} className="text-[9px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 border border-emerald-600 shadow-sm transition">DIA ÚLTIMO DOC</button>
+                        <button onClick={clearAllFilters} className="text-[9px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded border border-slate-800 hover:bg-slate-700 shadow-sm transition">Limpar Filtros</button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
                         {['ATIVO INEXEC', 'ATIVO EM EXEC', 'ATIVO EXEC TOT', 'ATIVO EXEC PARC', 'VENC INEXEC TOT', 'VENC EXEC TOT', 'VENC EXEC PARC'].map((label) => {
                             const isActive = fSituacaoTags.includes(label);
                             return (
@@ -1352,14 +1411,6 @@ function Dashboard() {
                         <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
                         <button onClick={() => setFOnlyBloqueado(!fOnlyBloqueado)} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${fOnlyBloqueado ? 'bg-orange-600 text-white border-transparent ring-2 ring-orange-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>BLOQ</button>
                         <button onClick={() => setFOnlyCancelado(!fOnlyCancelado)} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${fOnlyCancelado ? 'bg-red-600 text-white border-transparent ring-2 ring-red-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CAN</button>
-                        
-                        <div className="w-[1px] h-6 bg-slate-200 mx-1"></div>
-                        <button onClick={toggleCSup} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isCSupActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>C SUP</button>
-                        <button onClick={toggleContratosVigentes} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContratosVigentesActive ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTRATOS VIGENTES</button>
-                        <button onClick={toggleAte7Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border bg-white text-slate-600 border-slate-200 hover:bg-slate-50`}>Até 7 Dias Atrás</button>
-                        <button onClick={toggleAte30Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border bg-white text-slate-600 border-slate-200 hover:bg-slate-50`}>Até 30 Dias Atrás</button>
-                        <button onClick={applyFilterUltimoDia} className="text-[9px] font-bold uppercase bg-emerald-600 text-white px-3 py-1.5 rounded hover:bg-emerald-700 border border-emerald-600 shadow-sm transition">Dia Último Doc</button>
-                        <button onClick={clearAllFilters} className="text-[9px] font-bold uppercase bg-slate-800 text-white px-3 py-1.5 rounded border border-slate-800 hover:bg-slate-700 shadow-sm transition">Limpar Filtros</button>
                     </div>
                 </div>
                 
@@ -1390,7 +1441,7 @@ function Dashboard() {
             </div>
 
             <div className="max-w-[1600px] mx-auto grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-4">
-                <KPICard title="QTD Contratos" value={kpis.qtdContratos} color="slate" isCurrency={false} />
+                <KPICard title="QTD Contratos" value={kpis.qtdContratos} extraText={`SÓ GERAL: ${countSoGeral}\nSÓ CONTÁBIL: ${countSoContabil}`} color="slate" isCurrency={false} />
                 <KPICard title="QTD Ativos" value={kpis.qtdAtivos} extraText={`Inexec: ${kpis.qtdAtivosInexec}\nEm Exec: ${kpis.qtdAtivosEmExec}\nExec Tot: ${kpis.qtdAtivosExecTot}\nExec Parc: ${kpis.qtdAtivosExecParc}`} color="blue" isCurrency={false} />
                 <KPICard title="QTD Vencidos" value={kpis.qtdVencidos} extraText={`Inexec Tot: ${kpis.qtdVencInexecTot}\nExec Tot: ${kpis.qtdVencidosTot}\nExec Parc: ${kpis.qtdVencidosParc}`} color="slate" isCurrency={false} />
                 <KPICard title="QTD Bloqueados" value={kpis.qtdBloqueados} color="orange" isCurrency={false} />
@@ -1417,8 +1468,45 @@ function Dashboard() {
                 <DocStatCard title="Docs DF" count={docStats.df.count} date={docStats.df.latestDate} timestamp={docStats.df.latestVal} />
             </div>
 
-            <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-                <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            {/* LATEST E FIRST DOCS */}
+            <div className="max-w-[1600px] mx-auto bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2 flex-wrap gap-2">
+                    <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos Contábeis (Até 10 docs)</h3>
+                    {latestDocs.empenhado.length > 0 && (
+                        <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
+                            <span className="uppercase">Último Dia de Lançamento:</span>
+                            <span className="text-[11px]">{latestDocs.empenhado[0].dia || ''}</span>
+                        </div>
+                    )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-[300px]">
+                    <LatestDocCard title="EMPENHADO" docs={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
+                    <LatestDocCard title="RECEBIDO" docs={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
+                    <LatestDocCard title="LIQUIDADO" docs={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
+                    <LatestDocCard title="PAGO" docs={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                </div>
+            </div>
+
+            <div className="max-w-[1600px] mx-auto bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-10">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2 flex-wrap gap-2">
+                    <h3 className="text-xs font-black text-slate-800 uppercase">Os Primeiros Lançamentos Contábeis (Até 10 docs)</h3>
+                    {primeirosDocs.empenhado.length > 0 && (
+                        <div className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
+                            <span className="uppercase">Primeiro Dia de Lançamento:</span>
+                            <span className="text-[11px]">{primeirosDocs.empenhado[0].dia || ''}</span>
+                        </div>
+                    )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 h-[300px]">
+                    <LatestDocCard title="EMPENHADO" docs={primeirosDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
+                    <LatestDocCard title="RECEBIDO" docs={primeirosDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
+                    <LatestDocCard title="LIQUIDADO" docs={primeirosDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
+                    <LatestDocCard title="PAGO" docs={primeirosDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                </div>
+            </div>
+
+            <div className="max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-3 gap-8 mb-10">
+                <div className="xl:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <h3 className="text-xs font-black text-slate-800 uppercase mb-4">Composição de Documentos</h3>
                     <div className="flex flex-col gap-6 h-full justify-between pb-4">
                         <div className="relative h-[200px]">
@@ -1436,31 +1524,61 @@ function Dashboard() {
                     </div>
                 </div>
 
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2 flex-wrap gap-2">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                            <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos (Até 10 docs)</h3>
-                            <div className="flex gap-2">
-                                <div className="text-[9px] font-black text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1" title="Contratos apenas no Painel Geral">
-                                    <span>SÓ GERAL:</span><span className="text-[11px]">{countSoGeral}</span>
-                                </div>
-                                <div className="text-[9px] font-black text-orange-800 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1" title="Contratos apenas no Contábil">
-                                    <span>SÓ CONTÁBIL:</span><span className="text-[11px]">{countSoContabil}</span>
-                                </div>
-                            </div>
-                        </div>
-                        {maxDateInfo.str && (
-                            <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
-                                <span className="uppercase">Último Dia de Lançamento:</span>
-                                <span className="text-[11px]">{maxDateInfo.str}</span>
-                            </div>
-                        )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100%-40px)]">
-                        <LatestDocCard title="EMPENHADO" docs={latestDocs.empenhado} metricField="v_empenhado" colorClass="border-blue-500 text-blue-700" />
-                        <LatestDocCard title="RECEBIDO" docs={latestDocs.recebido} metricField="v_recebido" colorClass="border-violet-500 text-violet-700" showEmitente={true} />
-                        <LatestDocCard title="LIQUIDADO" docs={latestDocs.liquidado} metricField="v_liquidado" colorClass="border-amber-500 text-amber-600" />
-                        <LatestDocCard title="PAGO" docs={latestDocs.pago} metricField="v_pago" colorClass="border-emerald-500 text-emerald-600" />
+                <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                    <h3 className="text-xs font-black text-slate-800 uppercase mb-4 pb-2 border-b border-slate-100">Matriz de Empenho e Documentos</h3>
+                    <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar" style={{ maxHeight: '550px' }}>
+                        <table className="w-full text-left text-[9px] border-collapse relative">
+                            <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                <tr className="text-slate-600 uppercase font-black tracking-tighter">
+                                    {renderMatrixHeader('CONTRATO', 'contrato', 'text-left')}
+                                    {renderMatrixHeader('EMPENHO', 'empenho')}
+                                    <th className="p-3 whitespace-nowrap text-center cursor-pointer hover:bg-slate-200 transition" title="Dias do RO mais antigo até Vigência Incial" onClick={() => handleMatrixSort('diasAss')}>
+                                        <div className="flex items-center gap-1 justify-center">
+                                            DIAS ATÉ ASS. (RO) <span className="text-[8px] text-slate-400">{matrixSort.key === 'diasAss' ? (matrixSort.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
+                                        </div>
+                                    </th>
+                                    {renderMatrixHeader('QTD DOC EMP', 'qtd_emp', 'text-blue-700')}
+                                    {renderMatrixHeader('QTD DOC REC', 'qtd_rec', 'text-violet-700')}
+                                    {renderMatrixHeader('QTD DOC LIQ', 'qtd_liq', 'text-amber-700')}
+                                    {renderMatrixHeader('QTD DOC PAG', 'qtd_pag', 'text-emerald-700')}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {matrixData.map((row, i) => (
+                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-3 font-black text-slate-800 break-words max-w-[150px]">{row.contrato}</td>
+                                        <td className="p-3 font-bold text-slate-600 break-words text-center">{row.empenho}</td>
+                                        <td className="p-3 text-center align-middle">
+                                            {row.diasAss !== null ? (
+                                                <span className={`px-2 py-1 rounded font-bold text-[9px] ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                    {row.diasAss} d
+                                                </span>
+                                            ) : '-'}
+                                        </td>
+                                        <td className="p-3 text-center font-bold text-blue-600 bg-blue-50/30">{row.qtd_emp}</td>
+                                        <td className="p-3 text-center font-bold text-violet-600 bg-violet-50/30">{row.qtd_rec}</td>
+                                        <td className="p-3 text-center font-bold text-amber-600 bg-amber-50/30">{row.qtd_liq}</td>
+                                        <td className="p-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{row.qtd_pag}</td>
+                                    </tr>
+                                ))}
+                                {matrixData.length === 0 && (
+                                    <tr><td colSpan="7" className="p-4 text-center text-slate-400 font-bold">Sem dados para a matriz.</td></tr>
+                                )}
+                            </tbody>
+                            <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
+                                <tr className="text-slate-700 uppercase font-black">
+                                    <td colSpan="2" className="p-3 text-right">TOTAIS (Top 50):</td>
+                                    <td className="p-3 text-center align-middle">
+                                        <div className="text-[10px]">{matrixTotals.mediaDias !== '-' ? `${matrixTotals.mediaDias} d (Média)` : '-'}</div>
+                                        <div className="text-[7px] text-slate-500 font-bold leading-tight mt-0.5">*Exclui vals. negativos</div>
+                                    </td>
+                                    <td className="p-3 text-center text-blue-800">{matrixTotals.sumEmp}</td>
+                                    <td className="p-3 text-center text-violet-800">{matrixTotals.sumRec}</td>
+                                    <td className="p-3 text-center text-amber-800">{matrixTotals.sumLiq}</td>
+                                    <td className="p-3 text-center text-emerald-800">{matrixTotals.sumPag}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1472,13 +1590,21 @@ function Dashboard() {
                         <h3 className="text-xs font-black text-slate-800 uppercase">MÉTRICAS FINANCEIRAS E QTD (TOP 20)</h3>
                         <div className="flex gap-2 items-center">
                             <select value={top20Sort} onChange={(e) => setTop20Sort(e.target.value)} className="text-[10px] font-bold uppercase border border-slate-300 bg-slate-50 rounded px-2 py-1 outline-none">
-                                <option value="valor_desc">Maior Valor</option><option value="qtd_desc">Maior QTD</option><option value="nome_asc">Ordem A-Z</option>
+                                <option value="emp_desc">MAIOR EMPENHO</option>
+                                <option value="rec_desc">MAIOR RECEBIDO</option>
+                                <option value="liq_desc">MAIOR LIQUIDADO</option>
+                                <option value="pag_desc">MAIOR PAGO</option>
+                                <option value="can_desc">MAIOR CANCELADO</option>
+                                <option value="bloq_desc">MAIOR BLOQUEADO</option>
+                                <option value="qtd_desc">MAIOR QTD</option>
+                                <option value="nome_asc">ORDEM A-Z</option>
                             </select>
                             <select value={top20ViewMode} onChange={(e) => setTop20ViewMode(e.target.value)} className="text-[9px] font-black uppercase tracking-widest bg-blue-50 text-blue-600 px-3 py-1.5 rounded border border-blue-200 hover:bg-blue-100 transition shadow-sm cursor-pointer outline-none">
                                 <option value="favorecido">VER POR FAVORECIDO</option>
                                 <option value="contrato">VER POR CONTRATO</option>
                                 <option value="ano">VER POR ANO</option>
                                 <option value="empenho">VER POR EMPENHO</option>
+                                <option value="sec_log">VER POR SEC LOG</option>
                             </select>
                         </div>
                     </div>
@@ -1537,13 +1663,21 @@ function Dashboard() {
                         <h3 className="text-xs font-black text-slate-800 uppercase">EXECUÇÃO ORÇAMENTÁRIA E QTD EM 100% (TOP 20)</h3>
                         <div className="flex gap-2 items-center">
                             <select value={top20100Sort} onChange={(e) => setTop20100Sort(e.target.value)} className="text-[10px] font-bold uppercase border border-slate-300 bg-slate-50 rounded px-2 py-1 outline-none">
-                                <option value="valor_desc">Maior Valor</option><option value="qtd_desc">Maior QTD</option><option value="nome_asc">Ordem A-Z</option>
+                                <option value="emp_desc">MAIOR EMPENHO</option>
+                                <option value="rec_desc">MAIOR RECEBIDO</option>
+                                <option value="liq_desc">MAIOR LIQUIDADO</option>
+                                <option value="pag_desc">MAIOR PAGO</option>
+                                <option value="can_desc">MAIOR CANCELADO</option>
+                                <option value="bloq_desc">MAIOR BLOQUEADO</option>
+                                <option value="qtd_desc">MAIOR QTD</option>
+                                <option value="nome_asc">ORDEM A-Z</option>
                             </select>
                             <select value={top20100ViewMode} onChange={(e) => setTop20100ViewMode(e.target.value)} className="text-[9px] font-black uppercase tracking-widest bg-violet-50 text-violet-600 px-3 py-1.5 rounded border border-violet-200 hover:bg-violet-100 transition shadow-sm cursor-pointer outline-none">
                                 <option value="favorecido">VER POR FAVORECIDO</option>
                                 <option value="contrato">VER POR CONTRATO</option>
                                 <option value="ano">VER POR ANO</option>
                                 <option value="empenho">VER POR EMPENHO</option>
+                                <option value="sec_log">VER POR SEC LOG</option>
                             </select>
                         </div>
                     </div>
@@ -1622,7 +1756,7 @@ function Dashboard() {
                         </select>
                     </div>
                     <div className="h-[450px]">
-                        <ChartComponent id="chartAreaEvolucao" type="line" data={{ labels: areaChartData.labels, datasets: [{ label: 'EMPENHADO', data: areaChartData.d_emp, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'RECEBIDO', data: areaChartData.d_rec, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'LIQUIDADO', data: areaChartData.d_liq, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'PAGO', data: areaChartData.d_pag, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'CANCELADO', data: areaChartData.d_can, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'BLOQUEADO', data: areaChartData.d_blo, borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.3)', fill: true, tension: 0, pointRadius: 2 }] }} options={{ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { datalabels: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 13, weight: 'bold' }, bodyFont: { size: 11 }, callbacks: { label: function(context) { const val = context.raw.y !== undefined ? context.raw.y : context.raw; let lines = [context.dataset.label + ': ' + formatBRL(val)]; const docsList = areaChartData.tooltips[context.datasetIndex][context.dataIndex] || []; if (docsList.length > 0) { lines.push(...docsList.slice(0, 10).map(d => '  • ' + d)); if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`); } return lines; } } } }, scales: { x: { ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } }, y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } } } }} />
+                        <ChartComponent id="chartAreaEvolucao" type="line" data={{ labels: areaChartData.labels, datasets: [{ label: 'EMPENHADO', data: areaChartData.d_emp, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'RECEBIDO', data: areaChartData.d_rec, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'LIQUIDADO', data: areaChartData.d_liq, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'PAGO', data: areaChartData.d_pag, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'CANCELADO', data: areaChartData.d_can, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'BLOQUEADO', data: areaChartData.d_blo, borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.3)', fill: true, tension: 0, pointRadius: 2 }] }} options={{ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { datalabels: { display: function(context) { const data = context.dataset.data; const index = context.dataIndex; if (index === 0) return data[index] > 0; return data[index] > data[index - 1]; }, color: '#1e293b', align: 'top', anchor: 'end', offset: 2, font: { size: 9, weight: 'bold' }, formatter: (value) => shortenNumber(value), textStrokeColor: '#ffffff', textStrokeWidth: 2 }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 13, weight: 'bold' }, bodyFont: { size: 11 }, callbacks: { label: function(context) { const val = context.raw.y !== undefined ? context.raw.y : context.raw; let lines = [context.dataset.label + ': ' + formatBRL(val)]; const docsList = areaChartData.tooltips[context.datasetIndex][context.dataIndex] || []; if (docsList.length > 0) { lines.push(...docsList.slice(0, 10).map(d => '  • ' + d)); if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`); } return lines; } } } }, scales: { x: { ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } }, y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } } } }} />
                     </div>
                 </div>
             </div>
@@ -1630,7 +1764,7 @@ function Dashboard() {
             <div className="max-w-[1600px] mx-auto mb-10">
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
-                        <h3 className="text-xs font-black text-slate-800 uppercase">Evolução de Lançamentos (Não Acumulativo)</h3>
+                        <h3 className="text-xs font-black text-slate-800 uppercase">EVOLUÇÃO NÃO ACUMULADA DE LANÇAMENTOS</h3>
                         <select className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50 uppercase" value={barAggLevel} onChange={(e) => setBarAggLevel(e.target.value)}>
                             <option value="dia">Por Dia</option><option value="mes">Por Mês/Ano</option><option value="ano">Por Ano</option>
                         </select>
@@ -1658,6 +1792,7 @@ function Dashboard() {
                                 <TextHeader widthClass="w-[6%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
                                 <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacaoTabela} onSearchChange={setSearchSituacaoTabela} />
                                 <TextHeader widthClass="w-[5%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistenciaTabela} onSearchChange={setSearchExistenciaTabela} />
+                                <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
                                 <DateFilterHeader widthClass="w-[5%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />
                                 <NumericHeader widthClass="w-[6%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
                                 <TextHeader widthClass="w-[5%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitenteTabela} onSearchChange={setSearchEmitenteTabela} />
@@ -1693,6 +1828,13 @@ function Dashboard() {
                                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${row.existencia === 'AMBAS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : row.existencia === 'GERAL' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-orange-100 text-orange-800 border border-orange-200'}`}>
                                             {row.existencia}
                                         </span>
+                                    </td>
+                                    <td className="p-2 align-middle text-center font-bold text-slate-600">
+                                        {row.diasAss !== null ? (
+                                            <span className={`px-1.5 py-0.5 rounded ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                {row.diasAss} d
+                                            </span>
+                                        ) : "-"}
                                     </td>
                                     <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
                                         <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
@@ -1738,7 +1880,7 @@ function Dashboard() {
                         </tbody>
                         <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                             <tr className="text-slate-700 uppercase font-black">
-                                <td colSpan="14" className="p-2 text-right">TOTAIS:</td>
+                                <td colSpan="15" className="p-2 text-right">TOTAIS:</td>
                                 <td className="p-2 text-right text-blue-800">{formatBRL(totalsMaster.emp)}</td>
                                 <td className="p-2 text-right text-violet-800">{formatBRL(totalsMaster.rec)}</td>
                                 <td className="p-2 text-right text-amber-800">{formatBRL(totalsMaster.liq)}</td>
@@ -1759,7 +1901,7 @@ function Dashboard() {
             </div>
 
             <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-                <SubTable title="Detalhamento - Empenhado" data={filteredData} metricField="v_empenhado" metricLabel="EMPENHADO" headerColor="bg-blue-800" textColor="text-blue-700" rowBgColor="bg-blue-50/30" />
+                <SubTable title="Detalhamento - Empenhado" data={filteredData} metricField="v_empenhado" metricLabel="EMPENHADO" headerColor="bg-blue-800" textColor="text-blue-700" rowBgColor="bg-blue-50/30" showDiasAss={true} />
                 <SubTable title="Detalhamento - Recebido" data={filteredData} metricField="v_recebido" metricLabel="RECEBIDO" headerColor="bg-violet-800" textColor="text-violet-700" rowBgColor="" />
                 <SubTable title="Detalhamento - Liquidado" data={filteredData} metricField="v_liquidado" metricLabel="LIQUIDADO" headerColor="bg-amber-700" textColor="text-amber-700" rowBgColor="bg-amber-50/30" />
                 <SubTable title="Detalhamento - Pago" data={filteredData} metricField="v_pago" metricLabel="PAGO" headerColor="bg-emerald-800" textColor="text-emerald-700" rowBgColor="" />
@@ -1803,7 +1945,7 @@ function App() {
         const inputUser = username.toLowerCase().trim();
         if (users[inputUser] && users[inputUser] === password) {
             setIsAuthenticated(true);
-            try { localStorage.setItem('isAuth_Contabil', 'true'); } catch(e) {}
+            try { localStorage.setItem('isAuth_Contabil', 'true'); localStorage.setItem('user_Contabil', inputUser); } catch(e) {}
             setError("");
         } else {
             setError("Credenciais inválidas. Verifique o usuário e a senha.");
