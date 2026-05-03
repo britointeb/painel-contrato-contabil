@@ -5,7 +5,6 @@ if (window.ChartDataLabels) {
     Chart.defaults.set('plugins.datalabels', { display: false });
 }
 
-// Plugin: Linha Tracejada Vermelha para os 50% do Gráfico de 100%
 const fiftyPercentLinePlugin = {
     id: 'fiftyPercentLinePlugin',
     afterDatasetsDraw: (chart) => {
@@ -121,10 +120,10 @@ const exportTable = {
         const wsData = data.map(row => {
             let obj = {};
             columns.forEach(c => {
-                let val = row[c.key];
+                let val = c.format ? c.format(row) : row[c.key];
                 if (c.key === 'situacao') val = row.situacao;
-                else if (c.isCurrency) val = formatBRL(val);
-                else if (c.isPercent) val = formatPercentBR(val);
+                else if (c.isCurrency && !c.format) val = formatBRL(val);
+                else if (c.isPercent && !c.format) val = formatPercentBR(val);
                 obj[c.header] = val;
             });
             return obj;
@@ -137,11 +136,11 @@ const exportTable = {
         csvContent += columns.map(c => c.header).join(";") + "\n";
         data.forEach(row => {
             let r = columns.map(c => {
-                let val = c.key === 'situacao' ? row.situacao : row[c.key];
+                let val = c.format ? c.format(row) : (c.key === 'situacao' ? row.situacao : row[c.key]);
                 if (val === null || val === undefined) val = "-";
-                else if (c.isPercent) val = formatPercentBR(val);
-                else if (typeof val === 'number') return val.toString().replace('.', ',');
-                return `"${(val || '').toString().replace(/"/g, '""')}"`;
+                else if (c.isPercent && !c.format) val = formatPercentBR(val);
+                else if (typeof val === 'number' && !c.format) return val.toString().replace('.', ',');
+                return `"${(val || '').toString().replace(/"/g, '""').replace(/\n/g, ' ')}"`;
             });
             csvContent += r.join(";") + "\n";
         });
@@ -154,10 +153,10 @@ const exportTable = {
         doc.setFontSize(14); doc.text(title, 40, 30);
         const tableHead = [columns.map(c => c.header)];
         const tableBody = data.map(row => columns.map(c => {
-            let val = c.key === 'situacao' ? row.situacao : row[c.key];
+            let val = c.format ? c.format(row) : (c.key === 'situacao' ? row.situacao : row[c.key]);
             if (val === null || val === undefined) return "-";
-            if (c.isCurrency) return formatBRL(val);
-            if (c.isPercent) return formatPercentBR(val);
+            if (c.isCurrency && !c.format) return formatBRL(val);
+            if (c.isPercent && !c.format) return formatPercentBR(val);
             return val.toString();
         }));
         doc.autoTable({ head: tableHead, body: tableBody, startY: 40, styles: { fontSize: 5, cellPadding: 2, overflow: 'linebreak' }, headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] }, margin: { top: 20, left: 10, right: 10 } });
@@ -166,7 +165,7 @@ const exportTable = {
 };
 
 // =========================================================
-// COMPONENTES UI
+// COMPONENTES UI OTIMIZADOS
 // =========================================================
 
 const FormatNegativeValue = ({ val }) => {
@@ -179,18 +178,21 @@ const FormatNegativeValue = ({ val }) => {
     );
 };
 
-function CollapsibleSection({ title, children, defaultOpen = false }) {
+const ContratoCell = ({ row }) => (
+    <div className="flex flex-col">
+        <span className="font-black text-slate-800 text-[10px] whitespace-normal break-words">{row.contrato}</span>
+        <span className="text-[8px] text-slate-500 mt-1 whitespace-normal break-words">Compra: {row.compra}</span>
+        <span className="text-[8px] text-slate-500 leading-tight whitespace-normal break-words">Mod: {row.modalidade}</span>
+    </div>
+);
+
+function CollapsibleSection({ title, children, defaultOpen = false, globalTrigger, globalState }) {
     const [isOpen, setIsOpen] = useState(defaultOpen);
+    useEffect(() => { if (globalTrigger > 0) setIsOpen(globalState); }, [globalTrigger, globalState]);
     return (
         <div className="max-w-[1600px] mx-auto mb-8">
-            <div 
-                className="bg-slate-800 text-white px-6 py-4 rounded-xl cursor-pointer flex justify-between items-center shadow-lg hover:bg-slate-700 transition border border-slate-700"
-                onClick={() => setIsOpen(!isOpen)}
-            >
-                <h2 className="text-sm font-black tracking-widest uppercase flex items-center gap-2">
-                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                    {title}
-                </h2>
+            <div className="bg-slate-800 text-white px-6 py-4 rounded-xl cursor-pointer flex justify-between items-center shadow-lg hover:bg-slate-700 transition border border-slate-700" onClick={() => setIsOpen(!isOpen)}>
+                <h2 className="text-sm font-black tracking-widest uppercase flex items-center gap-2"><span className="w-2 h-2 bg-blue-500 rounded-full"></span>{title}</h2>
                 <span className="font-bold text-lg text-slate-300">{isOpen ? '▼' : '►'}</span>
             </div>
             {isOpen && <div className="mt-6">{children}</div>}
@@ -204,12 +206,8 @@ function AutoFitText({ text, className }) {
         const resize = () => {
             if (containerRef.current && textRef.current) {
                 textRef.current.style.transform = 'none'; 
-                const containerWidth = containerRef.current.clientWidth;
-                const textWidth = textRef.current.scrollWidth;
-                if (textWidth > containerWidth && containerWidth > 0) {
-                    const scale = containerWidth / textWidth;
-                    textRef.current.style.transform = `scale(${scale})`;
-                }
+                const cw = containerRef.current.clientWidth; const tw = textRef.current.scrollWidth;
+                if (tw > cw && cw > 0) { textRef.current.style.transform = `scale(${cw / tw})`; }
             }
         };
         resize(); setTimeout(resize, 50); window.addEventListener('resize', resize);
@@ -271,7 +269,7 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
         <div className={`p-4 rounded-2xl shadow-sm border border-t-4 bg-white flex flex-col h-full max-h-[300px] hover:shadow-md transition ${colorClass.split(' ')[0]}`}>
             <div className="flex justify-between items-start mb-3 shrink-0 gap-2">
                 <h4 className={`text-[10px] font-black uppercase tracking-widest ${colorClass.split(' ')[1]}`}>{title} ({docs.length})</h4>
-                <div className="text-[8.5px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-right whitespace-nowrap">Data: {latestDateStr} {daysText}</div>
+                <div className="text-[8.5px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-right whitespace-nowrap">Data: {latestDateStr} {daysText}</div>
             </div>
             <div className="flex flex-col gap-2 overflow-y-auto flex-1 pr-1 custom-scrollbar mb-2">
                 {docs.map((doc, idx) => (
@@ -285,9 +283,7 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
                             </div>
                             {showEmitente && <span className="text-[9px] font-bold text-slate-500 truncate mt-0.5" title={doc.ug}>{doc.ug}</span>}
                         </div>
-                        <span className={`text-[11px] font-black truncate w-1/3 text-right ${colorClass.split(' ')[1]}`} title={formatBRL(doc[metricField])}>
-                            <FormatNegativeValue val={doc[metricField]} />
-                        </span>
+                        <span className={`text-[11px] font-black truncate w-1/3 text-right ${colorClass.split(' ')[1]}`} title={formatBRL(doc[metricField])}><FormatNegativeValue val={doc[metricField]} /></span>
                     </div>
                 ))}
             </div>
@@ -450,9 +446,20 @@ function DocStatCard({ title, count, date, timestamp }) {
     );
 }
 
+// =========================================================
+// COMPONENTE: SUBTABELA DETALHADA
+// =========================================================
 function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgColor, textColor, showDiasAss = false }) {
     const [limit, setLimit] = useState(100);
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
+    
+    // Controle Dinâmico de Colunas para a SubTabela
+    const [showColsMenu, setShowColsMenu] = useState(false);
+    const [visibleCols, setVisibleCols] = useState({
+        dia: true, contrato: true, sec_log: true, existencia: true, situacao: true, movimento: true,
+        diasAss: showDiasAss, vigencia: true, perc_tempo: true, emitente: true, favorecido: true,
+        objeto: true, gestor: true, empenho: true, documento: true, obs: true, metricas: true
+    });
     
     const [searchContrato, setSearchContrato] = useState(""); 
     const [searchSituacao, setSearchSituacao] = useState("");
@@ -463,6 +470,8 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
     const [searchDocumento, setSearchDocumento] = useState("");
     const [searchObs, setSearchObs] = useState("");
     const [searchEmitente, setSearchEmitente] = useState("");
+    const [searchSecLog, setSearchSecLog] = useState("");
+    const [searchGestor, setSearchGestor] = useState("");
     
     const [numFilters, setNumFilters] = useState({ [metricField]: {min:'', max:''}, perc_tempo: {min:'', max:''}, diasAss: {min:'', max:''} });
     const [dateFilters, setDateFilters] = useState({ dia: {min:'', max:''}, data_inic: {min:'', max:''}, data_fim: {min:'', max:''} });
@@ -474,7 +483,7 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
         let filtered = data.filter(row => row[hasField]);
 
         filtered = filtered.filter(item => {
-            const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase());
+            const matchContrato = !searchContrato || item.contrato.includes(searchContrato.toUpperCase()) || item.compra.includes(searchContrato.toUpperCase()) || item.modalidade.includes(searchContrato.toUpperCase());
             const matchSit = !searchSituacao || item.situacao.includes(searchSituacao.toUpperCase());
             const matchExistencia = !searchExistencia || item.existencia.includes(searchExistencia.toUpperCase());
             const matchMovimento = !searchMovimento || item.movimentoStr.includes(searchMovimento.toUpperCase());
@@ -483,6 +492,8 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
             const matchEmpenho = !searchEmpenho || item.empenho.includes(searchEmpenho.toUpperCase());
             const matchDocumento = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
             const matchObs = !searchObs || item.obs.includes(searchObs.toUpperCase());
+            const matchSecLog = !searchSecLog || item.sec_log.includes(searchSecLog.toUpperCase());
+            const matchGestor = !searchGestor || item.gestor.includes(searchGestor.toUpperCase()) || item.fiscal.includes(searchGestor.toUpperCase());
 
             let matchNum = true;
             for (const key in numFilters) {
@@ -509,7 +520,7 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                 if (dateFilters.data_fim.max && item.dtFimVal && item.dtFimVal > new Date(dateFilters.data_fim.max + "T23:59:59").getTime()) matchDateCol = false;
             }
 
-            return matchContrato && matchSit && matchExistencia && matchMovimento && matchEmitente && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum && matchDateCol;
+            return matchContrato && matchSit && matchExistencia && matchMovimento && matchEmitente && matchUgNome && matchEmpenho && matchDocumento && matchObs && matchNum && matchDateCol && matchSecLog && matchGestor;
         });
 
         if (sortConfig.key) {
@@ -524,70 +535,108 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
             });
         }
         return filtered;
-    }, [data, metricField, searchContrato, searchSituacao, searchExistencia, searchMovimento, searchEmitente, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, sortConfig]);
+    }, [data, metricField, searchContrato, searchSituacao, searchExistencia, searchMovimento, searchEmitente, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchSecLog, searchGestor, numFilters, dateFilters, sortConfig]);
     
-    useEffect(() => { setLimit(100); }, [data, searchContrato, searchSituacao, searchExistencia, searchMovimento, searchEmitente, searchUgNome, searchEmpenho, searchDocumento, searchObs, numFilters, dateFilters, sortConfig]);
+    useEffect(() => { setLimit(100); }, [data, searchContrato, searchSituacao, searchExistencia, searchMovimento, searchEmitente, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchSecLog, searchGestor, numFilters, dateFilters, sortConfig]);
 
     const totalMetric = useMemo(() => tableData.reduce((acc, curr) => acc + curr[metricField], 0), [tableData, metricField]);
 
-    const exportColumns = [
-        { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, { header: "SITUAÇÃO", key: "situacao" }, { header: "MOVIMENTO", key: "movimentoStr" },
-        ...(showDiasAss ? [{ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }] : []),
-        { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
-        { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" },
-        { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" },
-        { header: "OBS", key: "obs" }, { header: metricLabel, key: metricField, isCurrency: true }
-    ];
+    const getExportCols = () => {
+        let cols = [];
+        if (visibleCols.dia) cols.push({ header: "DIA", key: "dia" });
+        if (visibleCols.contrato) cols.push({ header: "CONTRATO", key: "contrato", format: (r) => `${r.contrato}\nCompra: ${r.compra}\nMod: ${r.modalidade}` });
+        if (visibleCols.sec_log) cols.push({ header: "SEC LOG", key: "sec_log" });
+        if (visibleCols.situacao) cols.push({ header: "SITUAÇÃO", key: "situacao" });
+        if (visibleCols.movimento) cols.push({ header: "MOVIMENTO", key: "movimentoStr" });
+        if (visibleCols.diasAss) cols.push({ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" });
+        if (visibleCols.vigencia) { cols.push({ header: "VIG. INIC", key: "data_inic" }); cols.push({ header: "VIG. FIM", key: "data_fim" }); }
+        if (visibleCols.perc_tempo) cols.push({ header: "% TEMPO", key: "perc_tempo", isPercent: true });
+        if (visibleCols.emitente) cols.push({ header: "EMITENTE", key: "ug" });
+        if (visibleCols.favorecido) cols.push({ header: "FAVORECIDO", key: "favorecido" });
+        if (visibleCols.objeto) cols.push({ header: "OBJETO", key: "objeto" });
+        if (visibleCols.gestor) { cols.push({ header: "GESTOR", key: "gestor" }); cols.push({ header: "FISCAL", key: "fiscal" }); }
+        if (visibleCols.existencia) cols.push({ header: "EXISTÊNCIA", key: "existencia" });
+        if (visibleCols.empenho) cols.push({ header: "EMPENHO", key: "empenho" });
+        if (visibleCols.documento) cols.push({ header: "DOCUMENTO", key: "documento" });
+        if (visibleCols.obs) cols.push({ header: "OBS", key: "obs" });
+        if (visibleCols.metricas) cols.push({ header: metricLabel, key: metricField, isCurrency: true });
+        return cols;
+    };
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[500px]">
             <div className={`${headerColor} px-4 py-3 flex justify-between items-center flex-wrap gap-2`}>
                 <h3 className="text-white text-xs font-black tracking-widest uppercase">{title} ({tableData.length})</h3>
-                <div className="flex gap-2">
-                    <button onClick={() => exportTable.toExcel(tableData, title, exportColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
-                    <button onClick={() => exportTable.toCSV(tableData, title, exportColumns)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
-                    <button onClick={() => exportTable.toPDF(tableData, title, exportColumns, title.toUpperCase())} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                <div className="flex gap-2 items-center">
+                    <div className="relative">
+                        <button onClick={() => setShowColsMenu(!showColsMenu)} className="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
+                            COLUNAS ▼
+                        </button>
+                        {showColsMenu && (
+                            <div className="absolute right-0 mt-1 w-48 bg-white rounded shadow-lg border border-slate-200 z-50 p-2 flex flex-col gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                {Object.keys(visibleCols).map(k => (
+                                    <label key={k} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                        <input type="checkbox" checked={visibleCols[k]} onChange={() => setVisibleCols(p => ({...p, [k]: !p[k]}))} />
+                                        {k.toUpperCase()}
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="w-[1px] h-4 bg-slate-400 mx-1 hidden sm:block"></div>
+                    <button onClick={() => exportTable.toExcel(tableData, title, getExportCols())} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                    <button onClick={() => exportTable.toCSV(tableData, title, getExportCols())} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                    <button onClick={() => exportTable.toPDF(tableData, title, getExportCols(), title.toUpperCase())} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
                 </div>
             </div>
-            <div className="overflow-x-auto overflow-y-auto flex-1">
-                <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: showDiasAss ? '1800px' : '1700px' }}>
+            <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar">
+                <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: '1800px' }}>
                     <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                         <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                            <DateFilterHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
-                            <TextHeader widthClass="w-[7%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />
-                            <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacao} onSearchChange={setSearchSituacao} />
-                            <TextHeader widthClass="w-[6%]" label="MOVIMENTO" field="movimentoStr" current={sortConfig} onSort={handleSort} searchVal={searchMovimento} onSearchChange={setSearchMovimento} />
-                            {showDiasAss && <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
-                            <DateFilterHeader widthClass="w-[6%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />
-                            <NumericHeader widthClass="w-[7%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
-                            <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitente} onSearchChange={setSearchEmitente} />
-                            <TextHeader widthClass="w-[12%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
-                            <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
-                            <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
-                            <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
-                            <NumericHeader widthClass="w-[10%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                            {visibleCols.dia && <DateFilterHeader widthClass="w-[6%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />}
+                            {visibleCols.contrato && <TextHeader widthClass="w-[8%]" label="CONTRATO/COMPRA" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContrato} onSearchChange={setSearchContrato} />}
+                            {visibleCols.sec_log && <TextHeader widthClass="w-[5%]" label="SEC LOG" field="sec_log" current={sortConfig} onSort={handleSort} searchVal={searchSecLog} onSearchChange={setSearchSecLog} />}
+                            {visibleCols.situacao && <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacao} onSearchChange={setSearchSituacao} align="center" />}
+                            {visibleCols.movimento && <TextHeader widthClass="w-[6%]" label="MOVIMENTO" field="movimentoStr" current={sortConfig} onSort={handleSort} searchVal={searchMovimento} onSearchChange={setSearchMovimento} align="center" />}
+                            {visibleCols.diasAss && <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
+                            {visibleCols.vigencia && <DateFilterHeader widthClass="w-[6%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />}
+                            {visibleCols.perc_tempo && <NumericHeader widthClass="w-[7%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
+                            {visibleCols.emitente && <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitente} onSearchChange={setSearchEmitente} />}
+                            {visibleCols.favorecido && <TextHeader widthClass="w-[12%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />}
+                            {visibleCols.objeto && <TextHeader widthClass="w-[10%]" label="OBJETO" field="objeto" current={sortConfig} onSort={handleSort} />}
+                            {visibleCols.gestor && <TextHeader widthClass="w-[7%]" label="GESTOR/FISCAL" field="gestor" current={sortConfig} onSort={handleSort} searchVal={searchGestor} onSearchChange={setSearchGestor} />}
+                            {visibleCols.existencia && <TextHeader widthClass="w-[6%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistencia} onSearchChange={setSearchExistencia} align="center" />}
+                            {visibleCols.empenho && <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />}
+                            {visibleCols.documento && <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />}
+                            {visibleCols.obs && <TextHeader widthClass="w-[15%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />}
+                            {visibleCols.metricas && <NumericHeader widthClass="w-[10%]" label={metricLabel} field={metricField} current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {tableData.slice(0, limit).map((row, i) => (
-                            <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
-                                <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                <td className="p-2 align-middle text-center">
-                                    <div className="flex flex-wrap items-center justify-center gap-1">
-                                        {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
-                                            <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
-                                        ))}
-                                    </div>
-                                </td>
-                                <td className="p-2 align-middle text-center">
-                                    <div className="flex flex-wrap items-center justify-center gap-1">
-                                        {row.movimentoFlags && row.movimentoFlags.map((f, idx) => (
-                                            <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
-                                        ))}
-                                    </div>
-                                </td>
-                                {showDiasAss && (
+                            <tr key={i} className="hover:bg-blue-50 transition-colors">
+                                {visibleCols.dia && <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>}
+                                {visibleCols.contrato && <td className="p-2 align-top min-w-[150px]"><ContratoCell row={row} /></td>}
+                                {visibleCols.sec_log && <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.sec_log}</td>}
+                                {visibleCols.situacao && (
+                                    <td className="p-2 align-middle text-center">
+                                        <div className="flex flex-wrap items-center justify-center gap-1">
+                                            {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
+                                                <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
+                                            ))}
+                                        </div>
+                                    </td>
+                                )}
+                                {visibleCols.movimento && (
+                                    <td className="p-2 align-middle text-center">
+                                        <div className="flex flex-wrap items-center justify-center gap-1">
+                                            {row.movimentoFlags && row.movimentoFlags.map((f, idx) => (
+                                                <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
+                                            ))}
+                                        </div>
+                                    </td>
+                                )}
+                                {visibleCols.diasAss && (
                                     <td className="p-2 align-middle text-center font-bold text-slate-600">
                                         {row.diasAss !== null ? (
                                             <span className={`px-1.5 py-0.5 rounded ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
@@ -596,39 +645,59 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
                                         ) : "-"}
                                     </td>
                                 )}
-                                <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
-                                    <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
-                                    <div className="text-[9px] mt-1 text-slate-600">Fim: {row.data_fim || "-"}</div>
-                                </td>
-                                <td className="p-2 align-middle">
-                                    {row.perc_tempo !== null ? (
-                                        <div className="flex flex-col gap-1">
-                                            <div className="text-[8px] font-bold text-slate-500 text-center">{row.dias_passaram} d decorridos</div>
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-full bg-slate-200 rounded-full h-1.5 flex-1 overflow-hidden">
-                                                    <div className={`h-1.5 rounded-full ${row.perc_tempo >= 1 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(Math.max(row.perc_tempo * 100, 0), 100)}%` }}></div>
+                                {visibleCols.vigencia && (
+                                    <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
+                                        <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
+                                        <div className="text-[9px] mt-1 text-slate-600">Fim: {row.data_fim || "-"}</div>
+                                    </td>
+                                )}
+                                {visibleCols.perc_tempo && (
+                                    <td className="p-2 align-middle">
+                                        {row.perc_tempo !== null ? (
+                                            <div className="flex flex-col gap-1">
+                                                <div className="text-[8px] font-bold text-slate-500 text-center">{row.dias_passaram} d decorridos</div>
+                                                <div className="flex items-center gap-1">
+                                                    <div className="w-full bg-slate-200 rounded-full h-1.5 flex-1 overflow-hidden">
+                                                        <div className={`h-1.5 rounded-full ${row.perc_tempo >= 1 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(Math.max(row.perc_tempo * 100, 0), 100)}%` }}></div>
+                                                    </div>
+                                                    <span className="text-[8px] font-bold text-slate-600 min-w-[30px] text-right">{formatPercentBR(row.perc_tempo)}</span>
                                                 </div>
-                                                <span className="text-[8px] font-bold text-slate-600 min-w-[30px] text-right">{formatPercentBR(row.perc_tempo)}</span>
+                                                <div className="text-[8px] font-bold text-center mt-0.5"><span className={row.encerrando_dias < 0 ? 'text-red-500' : 'text-emerald-600'}>{row.encerrando_dias} d restantes</span></div>
                                             </div>
-                                            <div className="text-[8px] font-bold text-center mt-0.5"><span className={row.encerrando_dias < 0 ? 'text-red-500' : 'text-emerald-600'}>{row.encerrando_dias} d restantes</span></div>
-                                        </div>
-                                    ) : "-"}
-                                </td>
-                                <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
-                                <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
-                                <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
-                                <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
-                                <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
-                                <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
-                                    <FormatNegativeValue val={row[metricField]} />
-                                </td>
+                                        ) : "-"}
+                                    </td>
+                                )}
+                                {visibleCols.emitente && <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>}
+                                {visibleCols.favorecido && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>}
+                                {visibleCols.objeto && <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.objeto}</td>}
+                                {visibleCols.gestor && (
+                                    <td className="p-2 whitespace-normal break-words">
+                                        <div className="font-bold text-slate-700" title="Gestor">G: {row.gestor}</div>
+                                        <div className="font-bold text-slate-700 mt-1" title="Fiscal">F: {row.fiscal}</div>
+                                    </td>
+                                )}
+                                {visibleCols.existencia && (
+                                    <td className="p-2 align-middle text-center">
+                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${row.existencia === 'AMBAS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : row.existencia === 'GERAL' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-orange-100 text-orange-800 border border-orange-200'}`}>
+                                            {row.existencia}
+                                        </span>
+                                    </td>
+                                )}
+                                {visibleCols.empenho && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>}
+                                {visibleCols.documento && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>}
+                                {visibleCols.obs && <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>}
+                                {visibleCols.metricas && (
+                                    <td className={`p-2 text-right font-black whitespace-normal break-words ${textColor} ${rowBgColor}`}>
+                                        <FormatNegativeValue val={row[metricField]} />
+                                    </td>
+                                )}
                             </tr>
                         ))}
                     </tbody>
                     <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                         <tr className="text-slate-700 uppercase font-black">
-                            <td colSpan={showDiasAss ? 13 : 12} className="p-2 text-right">TOTAL DA MÉTRICA:</td>
-                            <td className={`p-2 text-right ${textColor}`}><FormatNegativeValue val={totalMetric} /></td>
+                            <td colSpan={Object.values(visibleCols).filter(v => v).length - 1} className="p-2 text-right">TOTAL DA MÉTRICA:</td>
+                            {visibleCols.metricas && <td className={`p-2 text-right ${textColor}`}><FormatNegativeValue val={totalMetric} /></td>}
                         </tr>
                     </tfoot>
                 </table>
@@ -642,12 +711,19 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
     );
 }
 
+// =========================================================
+// DASHBOARD MASTER CONTÁBIL
+// =========================================================
 function Dashboard() {
     const [rawData, setRawData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState("A processar conexão...");
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
     const currentUser = localStorage.getItem('user_Contabil') || 'Usuário';
+
+    // Estado de Expansão Global
+    const [globalExpandState, setGlobalExpandState] = useState(false);
+    const [expandTrigger, setExpandTrigger] = useState(0);
 
     const [top20Sort, setTop20Sort] = useState('emp_desc');
     const [top20ViewMode, setTop20ViewMode] = useState('favorecido');
@@ -688,18 +764,30 @@ function Dashboard() {
     const [searchObs, setSearchObs] = useState("");
     const [searchObjeto, setSearchObjeto] = useState("");
     const [searchGestorTabela, setSearchGestorTabela] = useState("");
-    const [searchModalidadeTabela, setSearchModalidadeTabela] = useState("");
     const [searchSecLogTabela, setSearchSecLogTabela] = useState("");
 
     const [fOnlyBloqueado, setFOnlyBloqueado] = useState(false);
     const [fOnlyCancelado, setFOnlyCancelado] = useState(false);
     const [visibleRows, setVisibleRows] = useState(100);
     
+    // Controle Dinâmico da Tabela Master
+    const [showMasterColsMenu, setShowMasterColsMenu] = useState(false);
+    const [masterCols, setMasterCols] = useState({
+        dia: true, contrato: true, sec_log: true, situacao: true, movimento: true, diasAss: true,
+        vigencia: true, perc_tempo: true, emitente: true, favorecido: true, objeto: true,
+        gestor: true, existencia: true, empenho: true, documento: true, obs: true, 
+        v_emp: true, v_rec: true, v_liq: true, v_pag: true, v_can: true, v_bloq: true
+    });
+
     const [areaAggLevel, setAreaAggLevel] = useState('mes');
     const [barAggLevel, setBarAggLevel] = useState('mes');
 
     const [matrixGroupBy, setMatrixGroupBy] = useState('contrato_empenho');
     const [matrixSort, setMatrixSort] = useState({ key: 'sortVal', direction: 'asc' });
+    const [matrixLimit, setMatrixLimit] = useState(100);
+
+    const [matrixVisibleCols, setMatrixVisibleCols] = useState({ emp: true, rec: true, liq: true, pag: true, bloq: true, can: true, saldo: true });
+    const [showMatrixCols, setShowMatrixCols] = useState(false);
 
     const initialNumFilters = {
         v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
@@ -712,6 +800,11 @@ function Dashboard() {
 
     const handleSort = (key) => setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
     const handleMatrixSort = (key) => setMatrixSort(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' }));
+
+    const handleToggleAll = () => {
+        setGlobalExpandState(!globalExpandState);
+        setExpandTrigger(prev => prev + 1);
+    };
 
     const toggleSituacaoTag = (lbl) => { setFSituacaoTags(prev => prev.includes(lbl) ? prev.filter(x => x !== lbl) : [...prev, lbl]); };
     const toggleExistencia = (val) => { setFExistencia(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]); };
@@ -742,14 +835,15 @@ function Dashboard() {
     const toggleContr7Dias = () => { if (isContr7DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ps7Doc); setDFimAte(ts); } };
     const toggleContr30Dias = () => { if (isContr30DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ps30Doc); setDFimAte(ts); } };
 
-    useEffect(() => { setVisibleRows(100); }, [fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, sortConfig]);
+    useEffect(() => { setVisibleRows(100); }, [fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchSecLogTabela, numFilters, dateFilters, sortConfig]);
+    useEffect(() => { setMatrixLimit(100); }, [matrixGroupBy, matrixSort, searchContratoTabela, fExistencia, fUg, fContrato]);
 
     const clearAllFilters = () => {
         setFUg([]); setFFavorecido([]); setFEmpenho([]); setFDocumento([]); setFContrato([]);
         setFFiscal([]); setFGestor([]); setFFiscalSub([]); setFGestorSub([]); setFSecLog([]); setFCompra([]); setFModalidade([]);
         setFSituacaoTags([]); setFExistencia([]); setFMovimento([]);
         setDDiaDe(""); setDDiaAte(""); setDInicDe(""); setDInicAte(""); setDFimDe(""); setDFimAte("");
-        setSearchContratoTabela(""); setSearchSituacaoTabela(""); setSearchExistenciaTabela(""); setSearchMovimentoTabela(""); setSearchEmitenteTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs(""); setSearchObjeto(""); setSearchGestorTabela(""); setSearchModalidadeTabela(""); setSearchSecLogTabela("");
+        setSearchContratoTabela(""); setSearchSituacaoTabela(""); setSearchExistenciaTabela(""); setSearchMovimentoTabela(""); setSearchEmitenteTabela(""); setSearchUgNome(""); setSearchEmpenho(""); setSearchDocumento(""); setSearchObs(""); setSearchObjeto(""); setSearchGestorTabela(""); setSearchSecLogTabela("");
         setNumFilters(initialNumFilters);
         setDateFilters({ dia: {min:'', max:''}, data_inic: {min:'', max:''}, data_fim: {min:'', max:''} });
         setFOnlyBloqueado(false); setFOnlyCancelado(false);
@@ -1055,7 +1149,7 @@ function Dashboard() {
                 return false;
             });
 
-            const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase());
+            const searchContratoTabelaMatch = !searchContratoTabela || item.contrato.includes(searchContratoTabela.toUpperCase()) || item.compra.includes(searchContratoTabela.toUpperCase()) || item.modalidade.includes(searchContratoTabela.toUpperCase());
             const searchSituacaoMatch = !searchSituacaoTabela || item.situacao.includes(searchSituacaoTabela.toUpperCase());
             const searchExistenciaMatch = !searchExistenciaTabela || item.existencia.includes(searchExistenciaTabela.toUpperCase());
             const searchMovimentoMatch = !searchMovimentoTabela || item.movimentoStr.includes(searchMovimentoTabela.toUpperCase());
@@ -1066,7 +1160,6 @@ function Dashboard() {
             const searchObsMatch = !searchObs || item.obs.includes(searchObs.toUpperCase());
             const searchObjetoMatch = !searchObjeto || item.objeto.includes(searchObjeto.toUpperCase());
             const searchGestorTMatch = !searchGestorTabela || item.gestor.includes(searchGestorTabela.toUpperCase()) || item.fiscal.includes(searchGestorTabela.toUpperCase());
-            const searchModalidadeMatch = !searchModalidadeTabela || item.modalidade.includes(searchModalidadeTabela.toUpperCase()) || item.compra.includes(searchModalidadeTabela.toUpperCase());
             const searchSecLogMatch = !searchSecLogTabela || item.sec_log.includes(searchSecLogTabela.toUpperCase());
 
             let matchNum = true;
@@ -1101,7 +1194,7 @@ function Dashboard() {
                    matchFiscal && matchGestor && matchFiscalSub && matchGestorSub && matchSecLog && matchCompra && matchModalidade &&
                    matchDiaDe && matchDiaAte && matchInicDe && matchInicAte && matchFDe && matchFAte && matchSitTag && 
                    searchContratoTabelaMatch && searchSituacaoMatch && searchExistenciaMatch && searchMovimentoMatch && searchEmitenteMatch && searchUgNomeMatch && searchEmpenhoMatch && 
-                   searchDocumentoMatch && searchObsMatch && searchObjetoMatch && searchGestorTMatch && searchModalidadeMatch && searchSecLogMatch &&
+                   searchDocumentoMatch && searchObsMatch && searchObjetoMatch && searchGestorTMatch && searchSecLogMatch &&
                    matchNum && matchDateCol && matchBloqueado && matchCancelado;
         });
 
@@ -1117,7 +1210,7 @@ function Dashboard() {
             });
         }
         return filtered;
-    }, [rawData, fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchModalidadeTabela, searchSecLogTabela, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
+    }, [rawData, fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchSecLogTabela, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
 
     const totalsMaster = useMemo(() => {
         let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
@@ -1255,6 +1348,8 @@ function Dashboard() {
         else if (sortMode === 'can_desc') arr.sort((a, b) => b.cancelado - a.cancelado);
         else if (sortMode === 'bloq_desc') arr.sort((a, b) => b.bloqueado - a.bloqueado);
         else if (sortMode === 'qtd_desc') arr.sort((a, b) => b.count - a.count);
+        else if (sortMode === 'aliq_desc') arr.sort((a, b) => (b.empenhado - b.liquidado - b.bloqueado - b.cancelado) - (a.empenhado - a.liquidado - a.bloqueado - a.cancelado));
+        else if (sortMode === 'apag_desc') arr.sort((a, b) => (b.empenhado - b.pago - b.bloqueado - b.cancelado) - (a.empenhado - a.pago - a.bloqueado - a.cancelado));
         else if (sortMode === 'nome_asc') arr.sort((a, b) => a.label.localeCompare(b.label));
         else arr.sort((a, b) => b.empenhado - a.empenhado);
 
@@ -1315,13 +1410,15 @@ function Dashboard() {
     const areaChartData = useMemo(() => {
         const agg = calculateAggregatedData(areaAggLevel);
         let cum_emp = 0, cum_rec = 0, cum_liq = 0, cum_pag = 0, cum_can = 0, cum_blo = 0;
-        const d_emp_cum = [], d_rec_cum = [], d_liq_cum = [], d_pag_cum = [], d_can_cum = [], d_blo_cum = [];
+        const d_emp_cum = [], d_rec_cum = [], d_liq_cum = [], d_pag_cum = [], d_can_cum = [], d_blo_cum = [], d_aliq_cum = [], d_apag_cum = [];
         agg.keys.forEach(k => {
             const b = agg.buckets[k];
             cum_emp += b.inc_emp; cum_rec += b.inc_rec; cum_liq += b.inc_liq; cum_pag += b.inc_pag; cum_can += b.inc_can; cum_blo += b.inc_blo;
             d_emp_cum.push(cum_emp); d_rec_cum.push(cum_rec); d_liq_cum.push(cum_liq); d_pag_cum.push(cum_pag); d_can_cum.push(cum_can); d_blo_cum.push(cum_blo);
+            d_aliq_cum.push(Math.max(0, cum_emp - cum_liq - cum_blo - cum_can));
+            d_apag_cum.push(Math.max(0, cum_emp - cum_pag - cum_blo - cum_can));
         });
-        return { labels: agg.labels, d_emp: d_emp_cum, d_rec: d_rec_cum, d_liq: d_liq_cum, d_pag: d_pag_cum, d_can: d_can_cum, d_blo: d_blo_cum, tooltips: agg.tooltips };
+        return { labels: agg.labels, d_emp: d_emp_cum, d_rec: d_rec_cum, d_liq: d_liq_cum, d_pag: d_pag_cum, d_can: d_can_cum, d_blo: d_blo_cum, d_aliq: d_aliq_cum, d_apag: d_apag_cum, tooltips: agg.tooltips };
     }, [filteredData, areaAggLevel]);
 
     const barChartData = useMemo(() => calculateAggregatedData(barAggLevel), [filteredData, barAggLevel]);
@@ -1355,7 +1452,7 @@ function Dashboard() {
             const key = matrixGroupBy === 'contrato' ? item.contrato : `${item.contrato}|${item.empenho}`;
             if(!map[key]) {
                 map[key] = {
-                    contrato: item.contrato, empenho: matrixGroupBy === 'contrato' ? "VÁRIOS" : item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity,
+                    contrato: item.contrato, compra: item.compra, modalidade: item.modalidade, empenho: matrixGroupBy === 'contrato' ? "VÁRIOS" : item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity,
                     docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set(), docs_bloq: new Set(), docs_can: new Set(),
                     v_emp: 0, v_rec: 0, v_liq: 0, v_pag: 0, v_bloq: 0, v_can: 0
                 };
@@ -1369,21 +1466,18 @@ function Dashboard() {
             if (item.has_bloqueado) m.docs_bloq.add(item.documento);
             if (item.has_cancelado) m.docs_can.add(item.documento);
             
-            m.v_emp += item.v_empenhado;
-            m.v_rec += item.v_recebido;
-            m.v_liq += item.v_liquidado;
-            m.v_pag += item.v_pago;
-            m.v_bloq += item.v_bloqueado;
-            m.v_can += item.v_cancelado;
+            m.v_emp += item.v_empenhado; m.v_rec += item.v_recebido; m.v_liq += item.v_liquidado;
+            m.v_pag += item.v_pago; m.v_bloq += item.v_bloqueado; m.v_can += item.v_cancelado;
         });
 
         let arr = Object.values(map).map(m => {
             let diasAss = null;
             if (m.min_ro_val !== Infinity && m.dtInicVal) { diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000); }
+            let v_saldo_exec = m.v_emp - m.v_liq - m.v_can - m.v_bloq;
             return {
-                contrato: m.contrato, empenho: m.empenho, diasAss: diasAss,
+                contrato: m.contrato, compra: m.compra, modalidade: m.modalidade, empenho: m.empenho, diasAss: diasAss,
                 qtd_emp: m.docs_emp.size, qtd_rec: m.docs_rec.size, qtd_liq: m.docs_liq.size, qtd_pag: m.docs_pag.size, qtd_bloq: m.docs_bloq.size, qtd_can: m.docs_can.size,
-                v_emp: m.v_emp, v_rec: m.v_rec, v_liq: m.v_liq, v_pag: m.v_pag, v_bloq: m.v_bloq, v_can: m.v_can,
+                v_emp: m.v_emp, v_rec: m.v_rec, v_liq: m.v_liq, v_pag: m.v_pag, v_bloq: m.v_bloq, v_can: m.v_can, v_saldo_exec: v_saldo_exec,
                 sortVal: m.min_ro_val !== Infinity ? m.min_ro_val : Number.MAX_SAFE_INTEGER
             };
         });
@@ -1399,23 +1493,29 @@ function Dashboard() {
             return 0;
         });
 
-        return arr.slice(0, 50);
+        return arr;
     }, [filteredData, matrixSort, matrixGroupBy]);
 
     const matrixTotals = useMemo(() => {
         let sumQtdEmp = 0, sumQtdRec = 0, sumQtdLiq = 0, sumQtdPag = 0, sumQtdBloq = 0, sumQtdCan = 0;
-        let sumVEmp = 0, sumVRec = 0, sumVLiq = 0, sumVPag = 0, sumVBloq = 0, sumVCan = 0;
+        let sumVEmp = 0, sumVRec = 0, sumVLiq = 0, sumVPag = 0, sumVBloq = 0, sumVCan = 0, sumVSaldoExec = 0;
         let sumDias = 0, countDias = 0;
         matrixData.forEach(row => {
             sumQtdEmp += row.qtd_emp; sumQtdRec += row.qtd_rec; sumQtdLiq += row.qtd_liq; sumQtdPag += row.qtd_pag;
             sumQtdBloq += row.qtd_bloq; sumQtdCan += row.qtd_can;
             sumVEmp += row.v_emp; sumVRec += row.v_rec; sumVLiq += row.v_liq; sumVPag += row.v_pag;
-            sumVBloq += row.v_bloq; sumVCan += row.v_can;
+            sumVBloq += row.v_bloq; sumVCan += row.v_can; sumVSaldoExec += row.v_saldo_exec;
             if (row.diasAss !== null && row.diasAss >= 0) { sumDias += row.diasAss; countDias++; }
         });
         const mediaDias = countDias > 0 ? (sumDias / countDias).toFixed(1) : '-';
-        return { sumQtdEmp, sumQtdRec, sumQtdLiq, sumQtdPag, sumQtdBloq, sumQtdCan, sumVEmp, sumVRec, sumVLiq, sumVPag, sumVBloq, sumVCan, mediaDias };
+        return { sumQtdEmp, sumQtdRec, sumQtdLiq, sumQtdPag, sumQtdBloq, sumQtdCan, sumVEmp, sumVRec, sumVLiq, sumVPag, sumVBloq, sumVCan, sumVSaldoExec, mediaDias };
     }, [matrixData]);
+
+    const matrixUniqueContratos = useMemo(() => new Set(matrixData.map(d => d.contrato)).size, [matrixData]);
+    const matrixUniqueEmpenhos = useMemo(() => {
+        if (matrixGroupBy === 'contrato_empenho') return matrixData.length;
+        return new Set(filteredData.filter(d => d.empenho && d.empenho !== '-').map(d => `${d.contrato}|${d.empenho}`)).size;
+    }, [matrixData, filteredData, matrixGroupBy]);
 
     const renderMatrixHeader = (label, key, extraClass = "") => {
         const isSorted = matrixSort.key === key;
@@ -1429,16 +1529,64 @@ function Dashboard() {
         );
     };
 
-    const exportMasterColumns = [
-        { header: "DIA", key: "dia" }, { header: "CONTRATO", key: "contrato" }, { header: "SITUAÇÃO", key: "situacao" }, { header: "MOVIMENTO", key: "movimentoStr" },
-        { header: "DIAS ATÉ ASS. (RO)", key: "diasAss" }, { header: "VIG. INIC", key: "data_inic" }, { header: "VIG. FIM", key: "data_fim" },
-        { header: "EMITENTE", key: "ug" }, { header: "FAVORECIDO", key: "favorecido" }, { header: "OBJETO", key: "objeto" },
-        { header: "FISCAL", key: "fiscal" }, { header: "GESTOR", key: "gestor" }, { header: "AQUISIÇÃO", key: "modalidade" }, { header: "COMPRA", key: "compra" },
-        { header: "EXISTÊNCIA", key: "existencia" }, { header: "SEC LOG", key: "sec_log" },
-        { header: "EMPENHO", key: "empenho" }, { header: "DOCUMENTO", key: "documento" }, { header: "OBS", key: "obs" },
-        { header: "EMPENHADO", key: "v_empenhado", isCurrency: true }, { header: "RECEBIDO", key: "v_recebido", isCurrency: true }, { header: "LIQUIDADO", key: "v_liquidado", isCurrency: true },
-        { header: "PAGO", key: "v_pago", isCurrency: true }, { header: "CANCELADO", key: "v_cancelado", isCurrency: true }, { header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true }
-    ];
+    const getMasterExportCols = () => {
+        let cols = [];
+        if (masterCols.dia) cols.push({ header: "DIA", key: "dia" });
+        if (masterCols.contrato) cols.push({ header: "CONTRATO", key: "contrato", format: (r) => `${r.contrato}\nCompra: ${r.compra}\nMod: ${r.modalidade}` });
+        if (masterCols.sec_log) cols.push({ header: "SEC LOG", key: "sec_log" });
+        if (masterCols.existencia) cols.push({ header: "EXISTÊNCIA", key: "existencia" });
+        if (masterCols.situacao) cols.push({ header: "SITUAÇÃO", key: "situacao" });
+        if (masterCols.movimento) cols.push({ header: "MOVIMENTO", key: "movimentoStr" });
+        if (masterCols.diasAss) cols.push({ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" });
+        if (masterCols.vigencia) { cols.push({ header: "VIG. INIC", key: "data_inic" }); cols.push({ header: "VIG. FIM", key: "data_fim" }); }
+        if (masterCols.perc_tempo) cols.push({ header: "% TEMPO", key: "perc_tempo", isPercent: true });
+        if (masterCols.emitente) cols.push({ header: "EMITENTE", key: "ug" });
+        if (masterCols.favorecido) cols.push({ header: "FAVORECIDO", key: "favorecido" });
+        if (masterCols.objeto) cols.push({ header: "OBJETO", key: "objeto" });
+        if (masterCols.gestor) { cols.push({ header: "GESTOR", key: "gestor" }); cols.push({ header: "FISCAL", key: "fiscal" }); }
+        if (masterCols.empenho) cols.push({ header: "EMPENHO", key: "empenho" });
+        if (masterCols.documento) cols.push({ header: "DOCUMENTO", key: "documento" });
+        if (masterCols.obs) cols.push({ header: "OBS", key: "obs" });
+        if (masterCols.v_emp) cols.push({ header: "EMPENHADO", key: "v_empenhado", isCurrency: true });
+        if (masterCols.v_rec) cols.push({ header: "RECEBIDO", key: "v_recebido", isCurrency: true });
+        if (masterCols.v_liq) cols.push({ header: "LIQUIDADO", key: "v_liquidado", isCurrency: true });
+        if (masterCols.v_pag) cols.push({ header: "PAGO", key: "v_pago", isCurrency: true });
+        if (masterCols.v_can) cols.push({ header: "CANCELADO", key: "v_cancelado", isCurrency: true });
+        if (masterCols.v_bloq) cols.push({ header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true });
+        return cols;
+    };
+
+    const getMatrixExportColumns = () => {
+        let cols = [{ header: "CONTRATO", key: "contrato", format: (r) => `${r.contrato}\nCompra: ${r.compra}\nMod: ${r.modalidade}` }];
+        if (matrixGroupBy === 'contrato_empenho') cols.push({ header: "EMPENHO", key: "empenho" });
+        cols.push({ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" });
+        if (matrixVisibleCols.emp) { cols.push({ header: "QTD DOC EMP", key: "qtd_emp" }); cols.push({ header: "R$ EMPENHADO", key: "v_emp", isCurrency: true }); }
+        if (matrixVisibleCols.rec) { cols.push({ header: "QTD DOC REC", key: "qtd_rec" }); cols.push({ header: "R$ RECEBIDO", key: "v_rec", isCurrency: true }); }
+        if (matrixVisibleCols.liq) { cols.push({ header: "QTD DOC LIQ", key: "qtd_liq" }); cols.push({ header: "R$ LIQUIDADO", key: "v_liq", isCurrency: true }); }
+        if (matrixVisibleCols.pag) { cols.push({ header: "QTD DOC PAG", key: "qtd_pag" }); cols.push({ header: "R$ PAGO", key: "v_pag", isCurrency: true }); }
+        if (matrixVisibleCols.bloq) { cols.push({ header: "QTD DOC BLOQ", key: "qtd_bloq" }); cols.push({ header: "R$ BLOQUEADO", key: "v_bloq", isCurrency: true }); }
+        if (matrixVisibleCols.can) { cols.push({ header: "QTD DOC CAN", key: "qtd_can" }); cols.push({ header: "R$ CANCELADO", key: "v_can", isCurrency: true }); }
+        if (matrixVisibleCols.saldo) cols.push({ header: "R$ SALDO A EXEC", key: "v_saldo_exec", isCurrency: true });
+        return cols;
+    };
+
+    let masterColSpanCount = 0;
+    if (masterCols.dia) masterColSpanCount++;
+    if (masterCols.contrato) masterColSpanCount++;
+    if (masterCols.sec_log) masterColSpanCount++;
+    if (masterCols.existencia) masterColSpanCount++;
+    if (masterCols.situacao) masterColSpanCount++;
+    if (masterCols.movimento) masterColSpanCount++;
+    if (masterCols.diasAss) masterColSpanCount++;
+    if (masterCols.vigencia) masterColSpanCount += 2;
+    if (masterCols.perc_tempo) masterColSpanCount++;
+    if (masterCols.emitente) masterColSpanCount++;
+    if (masterCols.favorecido) masterColSpanCount++;
+    if (masterCols.objeto) masterColSpanCount++;
+    if (masterCols.gestor) masterColSpanCount += 2;
+    if (masterCols.empenho) masterColSpanCount++;
+    if (masterCols.documento) masterColSpanCount++;
+    if (masterCols.obs) masterColSpanCount++;
 
     if (loading) return (
         <div className="h-screen flex flex-col items-center justify-center font-black text-slate-400 gap-4">
@@ -1538,8 +1686,14 @@ function Dashboard() {
                 </div>
             </div>
 
-            <CollapsibleSection title="INDICADORES DE DESEMPENHO (KPIs)" defaultOpen={false}>
-                <div className="max-w-[1600px] mx-auto grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-4">
+            <div className="max-w-[1600px] mx-auto mb-4 flex justify-end">
+                <button onClick={handleToggleAll} className="text-[10px] font-black uppercase bg-slate-800 text-white px-4 py-2 rounded-lg shadow-md hover:bg-slate-700 transition flex items-center gap-2">
+                    {globalExpandState ? '▼ RECOLHER TODAS AS SEÇÕES' : '► EXPANDIR TODAS AS SEÇÕES'}
+                </button>
+            </div>
+
+            <CollapsibleSection title="INDICADORES DE DESEMPENHO (KPIs)" defaultOpen={false} globalTrigger={expandTrigger} globalState={globalExpandState}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-4">
                     <KPICard title="QTD Contratos" value={kpis.qtdContratos} extraText={`SÓ GERAL: ${countSoGeral}\nSÓ CONTÁBIL: ${countSoContabil}`} color="slate" isCurrency={false} />
                     <KPICard title="QTD Ativos" value={kpis.qtdAtivos} extraText={`Inexec: ${kpis.qtdAtivosInexec}\nEm Exec: ${kpis.qtdAtivosEmExec}\nExec Tot: ${kpis.qtdAtivosExecTot}\nExec Parc: ${kpis.qtdAtivosExecParc}`} color="blue" isCurrency={false} />
                     <KPICard title="QTD Vencidos" value={kpis.qtdVencidos} extraText={`Inexec Tot: ${kpis.qtdVencInexecTot}\nExec Tot: ${kpis.qtdVencidosTot}\nExec Parc: ${kpis.qtdVencidosParc}`} color="slate" isCurrency={false} />
@@ -1550,7 +1704,7 @@ function Dashboard() {
                     <KPICard title="QTD Fornecedores" value={kpis.qtdFornecedores} color="violet" isCurrency={false} />
                 </div>
 
-                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
                     <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
                     <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif: ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Emp." color="violet" isCurrency={true} />
                     <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif: ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Emp." color="amber" isCurrency={true} />
@@ -1559,7 +1713,7 @@ function Dashboard() {
                     <KPICard title="Bloqueado" value={kpis.totalBloqueado} subValue={kpis.percBloqueado} percSuffix=" do Emp." color="orange" isCurrency={true} />
                 </div>
 
-                <div className="max-w-[1600px] mx-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
                     <DocStatCard title="Docs RO ou NE" count={docStats.rone.count} date={docStats.rone.latestDate} timestamp={docStats.rone.latestVal} />
                     <DocStatCard title="Docs NS ou NL (Rec)" count={docStats.nsnl_rec.count} date={docStats.nsnl_rec.latestDate} timestamp={docStats.nsnl_rec.latestVal} />
                     <DocStatCard title="Docs NS ou NL (Liq)" count={docStats.nsnl_liq.count} date={docStats.nsnl_liq.latestDate} timestamp={docStats.nsnl_liq.latestVal} />
@@ -1568,12 +1722,12 @@ function Dashboard() {
                 </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="PANORAMA GERAL DOS DOCUMENTOS" defaultOpen={false}>
+            <CollapsibleSection title="PANORAMA GERAL DOS DOCUMENTOS" defaultOpen={false} globalTrigger={expandTrigger} globalState={globalExpandState}>
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
                     <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2 flex-wrap gap-2">
                         <h3 className="text-xs font-black text-slate-800 uppercase">Últimos Lançamentos Contábeis (Até 10 docs)</h3>
                         {latestDocs.empenhado.length > 0 && (
-                            <div className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
+                            <div className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
                                 <span className="uppercase">Último Dia de Lançamento:</span>
                                 <span className="text-[11px]">{latestDocs.empenhado[0].dia || ''}</span>
                             </div>
@@ -1591,7 +1745,7 @@ function Dashboard() {
                     <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2 flex-wrap gap-2">
                         <h3 className="text-xs font-black text-slate-800 uppercase">Os Primeiros Lançamentos Contábeis (Até 10 docs)</h3>
                         {primeirosDocs.empenhado.length > 0 && (
-                            <div className="text-[10px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
+                            <div className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 shrink-0">
                                 <span className="uppercase">Primeiro Dia de Lançamento:</span>
                                 <span className="text-[11px]">{primeirosDocs.empenhado[0].dia || ''}</span>
                             </div>
@@ -1624,16 +1778,39 @@ function Dashboard() {
                         </div>
                     </div>
 
-                    <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
-                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
-                            <h3 className="text-xs font-black text-slate-800 uppercase">MATRIZ QTD DE DOCUMENTOS POR EMPENHO</h3>
-                            <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none shadow-sm text-slate-700 bg-slate-50">
-                                <option value="contrato_empenho">Por Contrato e Empenho</option>
-                                <option value="contrato">Apenas por Contrato</option>
-                            </select>
+                    <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+                        <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
+                            <h3 className="text-white text-xs font-black tracking-widest uppercase">
+                                MATRIZ QTD DE DOCUMENTOS POR EMPENHO ({Math.min(matrixLimit, matrixData.length)} de {matrixData.length} — {matrixUniqueContratos} Contratos | {matrixUniqueEmpenhos} Empenhos)
+                            </h3>
+                            <div className="flex gap-2 items-center">
+                                <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[9px] font-bold border border-slate-600 rounded px-2 py-1 outline-none shadow-sm text-white bg-slate-700">
+                                    <option value="contrato_empenho">Por Contrato e Empenho</option>
+                                    <option value="contrato">Apenas por Contrato</option>
+                                </select>
+                                <div className="relative">
+                                    <button onClick={() => setShowMatrixCols(!showMatrixCols)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
+                                        COLUNAS ▼
+                                    </button>
+                                    {showMatrixCols && (
+                                        <div className="absolute right-0 mt-1 w-48 bg-white rounded shadow-lg border border-slate-200 z-50 p-2 flex flex-col gap-1">
+                                            {Object.keys(matrixVisibleCols).map(k => (
+                                                <label key={k} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                                    <input type="checkbox" checked={matrixVisibleCols[k]} onChange={() => setMatrixVisibleCols(p => ({...p, [k]: !p[k]}))} />
+                                                    {k === 'emp' ? 'EMPENHADO' : k === 'rec' ? 'RECEBIDO' : k === 'liq' ? 'LIQUIDADO' : k === 'pag' ? 'PAGO' : k === 'bloq' ? 'BLOQUEADO' : k === 'can' ? 'CANCELADO' : 'SALDO A EXEC'}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="w-[1px] h-4 bg-slate-600 mx-1 hidden sm:block"></div>
+                                <button onClick={() => exportTable.toExcel(matrixData, "Matriz_Empenhos", getMatrixExportColumns())} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                                <button onClick={() => exportTable.toCSV(matrixData, "Matriz_Empenhos", getMatrixExportColumns())} className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                                <button onClick={() => exportTable.toPDF(matrixData, "Matriz_Empenhos", getMatrixExportColumns(), "MATRIZ DE EMPENHOS")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                            </div>
                         </div>
-                        <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar" style={{ maxHeight: '550px' }}>
-                            <table className="w-full text-left text-[9px] border-collapse relative" style={{ minWidth: '1500px' }}>
+                        <div className="overflow-x-auto overflow-y-auto flex-1 custom-scrollbar bg-white" style={{ maxHeight: '550px' }}>
+                            <table className="w-full text-left text-[9px] border-collapse relative">
                                 <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                     <tr className="text-slate-600 uppercase font-black tracking-tighter">
                                         {renderMatrixHeader('CONTRATO', 'contrato', 'text-left')}
@@ -1643,25 +1820,20 @@ function Dashboard() {
                                                 DIAS ATÉ ASS. (RO) <span className="text-[8px] text-slate-400">{matrixSort.key === 'diasAss' ? (matrixSort.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
                                             </div>
                                         </th>
-                                        {renderMatrixHeader('QTD DOC EMP', 'qtd_emp', 'text-blue-700')}
-                                        {renderMatrixHeader('R$ EMPENHADO', 'v_emp', 'text-blue-700 text-right')}
-                                        {renderMatrixHeader('QTD DOC REC', 'qtd_rec', 'text-violet-700')}
-                                        {renderMatrixHeader('R$ RECEBIDO', 'v_rec', 'text-violet-700 text-right')}
-                                        {renderMatrixHeader('QTD DOC LIQ', 'qtd_liq', 'text-amber-700')}
-                                        {renderMatrixHeader('R$ LIQUIDADO', 'v_liq', 'text-amber-700 text-right')}
-                                        {renderMatrixHeader('QTD DOC PAG', 'qtd_pag', 'text-emerald-700')}
-                                        {renderMatrixHeader('R$ PAGO', 'v_pag', 'text-emerald-700 text-right')}
-                                        {renderMatrixHeader('QTD DOC BLOQ', 'qtd_bloq', 'text-orange-700')}
-                                        {renderMatrixHeader('R$ BLOQUEADO', 'v_bloq', 'text-orange-700 text-right')}
-                                        {renderMatrixHeader('QTD DOC CAN', 'qtd_can', 'text-red-700')}
-                                        {renderMatrixHeader('R$ CANCELADO', 'v_can', 'text-red-700 text-right')}
+                                        {matrixVisibleCols.emp && <>{renderMatrixHeader('QTD DOC EMP', 'qtd_emp', 'text-blue-700')} {renderMatrixHeader('R$ EMPENHADO', 'v_emp', 'text-blue-700 text-right')}</>}
+                                        {matrixVisibleCols.rec && <>{renderMatrixHeader('QTD DOC REC', 'qtd_rec', 'text-violet-700')} {renderMatrixHeader('R$ RECEBIDO', 'v_rec', 'text-violet-700 text-right')}</>}
+                                        {matrixVisibleCols.liq && <>{renderMatrixHeader('QTD DOC LIQ', 'qtd_liq', 'text-amber-700')} {renderMatrixHeader('R$ LIQUIDADO', 'v_liq', 'text-amber-700 text-right')}</>}
+                                        {matrixVisibleCols.pag && <>{renderMatrixHeader('QTD DOC PAG', 'qtd_pag', 'text-emerald-700')} {renderMatrixHeader('R$ PAGO', 'v_pag', 'text-emerald-700 text-right')}</>}
+                                        {matrixVisibleCols.bloq && <>{renderMatrixHeader('QTD DOC BLOQ', 'qtd_bloq', 'text-orange-700')} {renderMatrixHeader('R$ BLOQUEADO', 'v_bloq', 'text-orange-700 text-right')}</>}
+                                        {matrixVisibleCols.can && <>{renderMatrixHeader('QTD DOC CAN', 'qtd_can', 'text-red-700')} {renderMatrixHeader('R$ CANCELADO', 'v_can', 'text-red-700 text-right')}</>}
+                                        {matrixVisibleCols.saldo && renderMatrixHeader('R$ SALDO A EXEC', 'v_saldo_exec', 'text-teal-700 text-right')}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {matrixData.map((row, i) => (
+                                    {matrixData.slice(0, matrixLimit).map((row, i) => (
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                            <td className="p-3 font-black text-slate-800 break-words max-w-[150px]">{row.contrato}</td>
-                                            {matrixGroupBy === 'contrato_empenho' && <td className="p-3 font-bold text-slate-600 break-words text-center">{row.empenho}</td>}
+                                            <td className="p-3 font-black text-slate-800 break-words min-w-[150px]"><ContratoCell row={row} /></td>
+                                            {matrixGroupBy === 'contrato_empenho' && <td className="p-3 font-bold text-slate-600 break-words text-center whitespace-nowrap">{row.empenho}</td>}
                                             <td className="p-3 text-center align-middle">
                                                 {row.diasAss !== null ? (
                                                     <span className={`px-2 py-1 rounded font-bold text-[9px] ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
@@ -1669,55 +1841,52 @@ function Dashboard() {
                                                     </span>
                                                 ) : '-'}
                                             </td>
-                                            <td className="p-3 text-center font-bold text-blue-600 bg-blue-50/30">{row.qtd_emp}</td>
-                                            <td className="p-3 text-right font-black text-blue-700 bg-blue-50/30"><FormatNegativeValue val={row.v_emp} /></td>
-                                            <td className="p-3 text-center font-bold text-violet-600 bg-violet-50/30">{row.qtd_rec}</td>
-                                            <td className="p-3 text-right font-black text-violet-700 bg-violet-50/30"><FormatNegativeValue val={row.v_rec} /></td>
-                                            <td className="p-3 text-center font-bold text-amber-600 bg-amber-50/30">{row.qtd_liq}</td>
-                                            <td className="p-3 text-right font-black text-amber-700 bg-amber-50/30"><FormatNegativeValue val={row.v_liq} /></td>
-                                            <td className="p-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{row.qtd_pag}</td>
-                                            <td className="p-3 text-right font-black text-emerald-700 bg-emerald-50/30"><FormatNegativeValue val={row.v_pag} /></td>
-                                            <td className="p-3 text-center font-bold text-orange-600 bg-orange-50/30">{row.qtd_bloq}</td>
-                                            <td className="p-3 text-right font-black text-orange-700 bg-orange-50/30"><FormatNegativeValue val={row.v_bloq} /></td>
-                                            <td className="p-3 text-center font-bold text-red-600 bg-red-50/30">{row.qtd_can}</td>
-                                            <td className="p-3 text-right font-black text-red-700 bg-red-50/30"><FormatNegativeValue val={row.v_can} /></td>
+                                            {matrixVisibleCols.emp && <><td className="p-3 text-center font-bold text-blue-600 bg-blue-50/30">{row.qtd_emp}</td><td className="p-3 text-right font-black text-blue-700 bg-blue-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_emp} /></td></>}
+                                            {matrixVisibleCols.rec && <><td className="p-3 text-center font-bold text-violet-600 bg-violet-50/30">{row.qtd_rec}</td><td className="p-3 text-right font-black text-violet-700 bg-violet-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_rec} /></td></>}
+                                            {matrixVisibleCols.liq && <><td className="p-3 text-center font-bold text-amber-600 bg-amber-50/30">{row.qtd_liq}</td><td className="p-3 text-right font-black text-amber-700 bg-amber-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_liq} /></td></>}
+                                            {matrixVisibleCols.pag && <><td className="p-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{row.qtd_pag}</td><td className="p-3 text-right font-black text-emerald-700 bg-emerald-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_pag} /></td></>}
+                                            {matrixVisibleCols.bloq && <><td className="p-3 text-center font-bold text-orange-600 bg-orange-50/30">{row.qtd_bloq}</td><td className="p-3 text-right font-black text-orange-700 bg-orange-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_bloq} /></td></>}
+                                            {matrixVisibleCols.can && <><td className="p-3 text-center font-bold text-red-600 bg-red-50/30">{row.qtd_can}</td><td className="p-3 text-right font-black text-red-700 bg-red-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_can} /></td></>}
+                                            {matrixVisibleCols.saldo && <td className="p-3 text-right font-black text-teal-700 bg-teal-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_saldo_exec} /></td>}
                                         </tr>
                                     ))}
                                     {matrixData.length === 0 && (
-                                        <tr><td colSpan="15" className="p-4 text-center text-slate-400 font-bold">Sem dados para a matriz.</td></tr>
+                                        <tr><td colSpan="20" className="p-4 text-center text-slate-400 font-bold">Sem dados para a matriz.</td></tr>
                                     )}
                                 </tbody>
                                 <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                                     <tr className="text-slate-700 uppercase font-black">
-                                        <td colSpan={matrixGroupBy === 'contrato_empenho' ? 2 : 1} className="p-3 text-right">TOTAIS (Top 50):</td>
+                                        <td colSpan={matrixGroupBy === 'contrato_empenho' ? 2 : 1} className="p-3 text-right">TOTAIS:</td>
                                         <td className="p-3 text-center align-middle">
                                             <div className="text-[10px]">{matrixTotals.mediaDias !== '-' ? `${matrixTotals.mediaDias} d (Média)` : '-'}</div>
                                             <div className="text-[7px] text-slate-500 font-bold leading-tight mt-0.5">*Exclui vals. negativos</div>
                                         </td>
-                                        <td className="p-3 text-center text-blue-800">{matrixTotals.sumQtdEmp}</td>
-                                        <td className="p-3 text-right text-blue-800"><FormatNegativeValue val={matrixTotals.sumVEmp}/></td>
-                                        <td className="p-3 text-center text-violet-800">{matrixTotals.sumQtdRec}</td>
-                                        <td className="p-3 text-right text-violet-800"><FormatNegativeValue val={matrixTotals.sumVRec}/></td>
-                                        <td className="p-3 text-center text-amber-800">{matrixTotals.sumQtdLiq}</td>
-                                        <td className="p-3 text-right text-amber-800"><FormatNegativeValue val={matrixTotals.sumVLiq}/></td>
-                                        <td className="p-3 text-center text-emerald-800">{matrixTotals.sumQtdPag}</td>
-                                        <td className="p-3 text-right text-emerald-800"><FormatNegativeValue val={matrixTotals.sumVPag}/></td>
-                                        <td className="p-3 text-center text-orange-800">{matrixTotals.sumQtdBloq}</td>
-                                        <td className="p-3 text-right text-orange-800"><FormatNegativeValue val={matrixTotals.sumVBloq}/></td>
-                                        <td className="p-3 text-center text-red-800">{matrixTotals.sumQtdCan}</td>
-                                        <td className="p-3 text-right text-red-800"><FormatNegativeValue val={matrixTotals.sumVCan}/></td>
+                                        {matrixVisibleCols.emp && <><td className="p-3 text-center text-blue-800">{matrixTotals.sumQtdEmp}</td><td className="p-3 text-right text-blue-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVEmp}/></td></>}
+                                        {matrixVisibleCols.rec && <><td className="p-3 text-center text-violet-800">{matrixTotals.sumQtdRec}</td><td className="p-3 text-right text-violet-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVRec}/></td></>}
+                                        {matrixVisibleCols.liq && <><td className="p-3 text-center text-amber-800">{matrixTotals.sumQtdLiq}</td><td className="p-3 text-right text-amber-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVLiq}/></td></>}
+                                        {matrixVisibleCols.pag && <><td className="p-3 text-center text-emerald-800">{matrixTotals.sumQtdPag}</td><td className="p-3 text-right text-emerald-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVPag}/></td></>}
+                                        {matrixVisibleCols.bloq && <><td className="p-3 text-center text-orange-800">{matrixTotals.sumQtdBloq}</td><td className="p-3 text-right text-orange-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVBloq}/></td></>}
+                                        {matrixVisibleCols.can && <><td className="p-3 text-center text-red-800">{matrixTotals.sumQtdCan}</td><td className="p-3 text-right text-red-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVCan}/></td></>}
+                                        {matrixVisibleCols.saldo && <td className="p-3 text-right text-teal-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVSaldoExec}/></td>}
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
+                        {matrixLimit < matrixData.length && (
+                            <div className="p-4 bg-slate-50 border-t flex justify-center">
+                                <button onClick={() => setMatrixLimit(prev => prev + 100)} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-6 py-2 rounded transition border border-slate-300 shadow-sm cursor-pointer">
+                                    Ver mais (+100)
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </CollapsibleSection>
 
-            <CollapsibleSection title="GRÁFICOS DE EXECUÇÃO DOS DOCUMENTOS" defaultOpen={false}>
+            <CollapsibleSection title="GRÁFICOS DE EXECUÇÃO DOS DOCUMENTOS" defaultOpen={false} globalTrigger={expandTrigger} globalState={globalExpandState}>
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-10">
                     <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xs font-black text-slate-800 uppercase">MÉTRICAS FINANCEIRAS E QTD (TOP 20)</h3>
+                        <h3 className="text-xs font-black text-slate-800 uppercase">EXECUÇÃO ORÇAMENTÁRIA E QTD (TOP 20)</h3>
                         <div className="flex gap-2 items-center">
                             <select value={top20Sort} onChange={(e) => setTop20Sort(e.target.value)} className="text-[10px] font-bold uppercase border border-slate-300 bg-slate-50 rounded px-2 py-1 outline-none">
                                 <option value="emp_desc">MAIOR EMPENHO</option>
@@ -1726,6 +1895,8 @@ function Dashboard() {
                                 <option value="pag_desc">MAIOR PAGO</option>
                                 <option value="can_desc">MAIOR CANCELADO</option>
                                 <option value="bloq_desc">MAIOR BLOQUEADO</option>
+                                <option value="aliq_desc">MAIOR A LIQUIDAR</option>
+                                <option value="apag_desc">MAIOR A PAGAR</option>
                                 <option value="qtd_desc">MAIOR QTD</option>
                                 <option value="nome_asc">ORDEM A-Z</option>
                             </select>
@@ -1796,6 +1967,8 @@ function Dashboard() {
                                 <option value="pag_desc">MAIOR PAGO</option>
                                 <option value="can_desc">MAIOR CANCELADO</option>
                                 <option value="bloq_desc">MAIOR BLOQUEADO</option>
+                                <option value="aliq_desc">MAIOR A LIQUIDAR</option>
+                                <option value="apag_desc">MAIOR A PAGAR</option>
                                 <option value="qtd_desc">MAIOR QTD</option>
                                 <option value="nome_asc">ORDEM A-Z</option>
                             </select>
@@ -1881,7 +2054,56 @@ function Dashboard() {
                         </select>
                     </div>
                     <div className="h-[450px]">
-                        <ChartComponent id="chartAreaEvolucao" type="line" data={{ labels: areaChartData.labels, datasets: [{ label: 'EMPENHADO', data: areaChartData.d_emp, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'RECEBIDO', data: areaChartData.d_rec, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'LIQUIDADO', data: areaChartData.d_liq, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'PAGO', data: areaChartData.d_pag, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'CANCELADO', data: areaChartData.d_can, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', fill: true, tension: 0, pointRadius: 2 }, { label: 'BLOQUEADO', data: areaChartData.d_blo, borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.3)', fill: true, tension: 0, pointRadius: 2 }] }} options={{ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { datalabels: { display: function(context) { const data = context.dataset.data; const index = context.dataIndex; if (index === 0) return data[index] > 0; return data[index] > data[index - 1]; }, color: '#1e293b', align: 'top', anchor: 'end', offset: 2, font: { size: 9, weight: 'bold' }, formatter: (value) => shortenNumber(value), textStrokeColor: '#ffffff', textStrokeWidth: 2 }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 13, weight: 'bold' }, bodyFont: { size: 11 }, callbacks: { label: function(context) { const val = context.raw.y !== undefined ? context.raw.y : context.raw; let lines = [context.dataset.label + ': ' + formatBRL(val)]; const docsList = areaChartData.tooltips[context.datasetIndex][context.dataIndex] || []; if (docsList.length > 0) { lines.push(...docsList.slice(0, 10).map(d => '  • ' + d)); if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`); } return lines; } } } }, scales: { x: { ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } }, y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } } } }} />
+                        <ChartComponent id="chartAreaEvolucao" type="line" data={{ 
+                            labels: areaChartData.labels, 
+                            datasets: [
+                                { label: 'EMPENHADO', data: areaChartData.d_emp, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, 
+                                { label: 'RECEBIDO', data: areaChartData.d_rec, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.3)', fill: true, tension: 0, pointRadius: 2 }, 
+                                { label: 'LIQUIDADO', data: areaChartData.d_liq, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.3)', fill: true, tension: 0, pointRadius: 2 }, 
+                                { label: 'PAGO', data: areaChartData.d_pag, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.3)', fill: true, tension: 0, pointRadius: 2 }, 
+                                { label: 'CANCELADO', data: areaChartData.d_can, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.3)', fill: true, tension: 0, pointRadius: 2 }, 
+                                { label: 'BLOQUEADO', data: areaChartData.d_blo, borderColor: '#f97316', backgroundColor: 'rgba(249, 115, 22, 0.3)', fill: true, tension: 0, pointRadius: 2 },
+                                { label: 'A LIQUIDAR', data: areaChartData.d_aliq, borderColor: '#94a3b8', backgroundColor: 'transparent', fill: false, tension: 0, pointRadius: 2, borderDash: [5, 5] },
+                                { label: 'A PAGAR', data: areaChartData.d_apag, borderColor: '#475569', backgroundColor: 'transparent', fill: false, tension: 0, pointRadius: 2, borderDash: [2, 2] }
+                            ] 
+                        }} options={{ 
+                            responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, 
+                            plugins: { 
+                                datalabels: { 
+                                    display: function(context) { 
+                                        if (context.dataset.label === 'A LIQUIDAR' || context.dataset.label === 'A PAGAR') return false;
+                                        const data = context.dataset.data; const index = context.dataIndex; 
+                                        if (index === 0) return data[index] > 0; 
+                                        return data[index] > data[index - 1]; 
+                                    }, 
+                                    color: '#1e293b', align: 'top', anchor: 'end', offset: 2, font: { size: 9, weight: 'bold' }, formatter: (value) => shortenNumber(value), textStrokeColor: '#ffffff', textStrokeWidth: 2 
+                                }, 
+                                tooltip: { 
+                                    backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 13, weight: 'bold' }, bodyFont: { size: 11 }, 
+                                    callbacks: { 
+                                        label: function(context) { 
+                                            const val = context.raw.y !== undefined ? context.raw.y : context.raw; 
+                                            const idx = context.dataIndex;
+                                            const empVal = areaChartData.d_emp[idx];
+                                            let pct = "0,0%";
+                                            if (empVal > 0) { pct = ((val / empVal) * 100).toFixed(1).replace('.', ',') + '%'; }
+                                            
+                                            let lines = [context.dataset.label + ': ' + formatBRL(val) + (context.dataset.label === 'EMPENHADO' ? '' : ` (${pct})`)]; 
+                                            
+                                            if (areaChartData.tooltips[context.datasetIndex]) {
+                                                const docsList = areaChartData.tooltips[context.datasetIndex][context.dataIndex] || []; 
+                                                if (docsList.length > 0) { lines.push(...docsList.slice(0, 10).map(d => '  • ' + d)); if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`); } 
+                                            }
+                                            return lines; 
+                                        } 
+                                    } 
+                                } 
+                            }, 
+                            scales: { 
+                                x: { ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } }, 
+                                y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } } 
+                            } 
+                        }} />
                     </div>
                 </div>
 
@@ -1899,139 +2121,153 @@ function Dashboard() {
             </CollapsibleSection>
 
             {/* SEÇÃO 3: TABELAS DE EXECUÇÃO */}
-            <CollapsibleSection title="TABELAS DE EXECUÇÃO DOS DOCUMENTOS" defaultOpen={false}>
+            <CollapsibleSection title="TABELAS DE EXECUÇÃO DOS DOCUMENTOS" defaultOpen={false} globalTrigger={expandTrigger} globalState={globalExpandState}>
                 <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden mb-10">
                     <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
                         <h3 className="text-white text-xs font-black tracking-widest uppercase">Detalhamento Master ({Math.min(visibleRows, filteredData.length)} de {filteredData.length})</h3>
-                        <div className="flex gap-2">
-                            <button onClick={() => exportTable.toExcel(filteredData, "Master_Contabil", exportMasterColumns)} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
-                            <button onClick={() => exportTable.toCSV(filteredData, "Master_Contabil", exportMasterColumns)} className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
-                            <button onClick={() => exportTable.toPDF(filteredData, "Master_Contabil", exportMasterColumns, "DETALHAMENTO MASTER")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
+                        <div className="flex gap-2 items-center">
+                            <div className="relative">
+                                <button onClick={() => setShowMasterColsMenu(!showMasterColsMenu)} className="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
+                                    COLUNAS ▼
+                                </button>
+                                {showMasterColsMenu && (
+                                    <div className="absolute right-0 mt-1 w-48 bg-white rounded shadow-lg border border-slate-200 z-50 p-2 flex flex-col gap-1 max-h-64 overflow-y-auto custom-scrollbar">
+                                        {Object.keys(masterCols).map(k => (
+                                            <label key={k} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                                <input type="checkbox" checked={masterCols[k]} onChange={() => setMasterCols(p => ({...p, [k]: !p[k]}))} />
+                                                {k.toUpperCase().replace('_', ' ')}
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="w-[1px] h-4 bg-slate-600 mx-1 hidden sm:block"></div>
+                            <button onClick={() => exportTable.toExcel(filteredData, "Master_Contabil", getMasterExportCols())} className="bg-green-600 hover:bg-green-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">EXCEL</button>
+                            <button onClick={() => exportTable.toCSV(filteredData, "Master_Contabil", getMasterExportCols())} className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">CSV</button>
+                            <button onClick={() => exportTable.toPDF(filteredData, "Master_Contabil", getMasterExportCols(), "DETALHAMENTO MASTER")} className="bg-red-600 hover:bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">PDF</button>
                         </div>
                     </div>
-                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', minWidth: '2700px' }}>
+                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: '2700px' }}>
                             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                 <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
-                                    <DateFilterHeader widthClass="w-[5%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />
-                                    <TextHeader widthClass="w-[6%]" label="CONTRATO" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />
-                                    <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacaoTabela} onSearchChange={setSearchSituacaoTabela} />
-                                    <TextHeader widthClass="w-[6%]" label="MOVIMENTO" field="movimentoStr" current={sortConfig} onSort={handleSort} searchVal={searchMovimentoTabela} onSearchChange={setSearchMovimentoTabela} />
-                                    <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
-                                    <DateFilterHeader widthClass="w-[5%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />
-                                    <NumericHeader widthClass="w-[6%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />
-                                    <TextHeader widthClass="w-[5%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitenteTabela} onSearchChange={setSearchEmitenteTabela} />
-                                    <TextHeader widthClass="w-[10%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />
-                                    <TextHeader widthClass="w-[10%]" label="OBJETO" field="objeto" current={sortConfig} onSort={handleSort} searchVal={searchObjeto} onSearchChange={setSearchObjeto} />
-                                    <TextHeader widthClass="w-[7%]" label="GESTOR/FISCAL" field="gestor" current={sortConfig} onSort={handleSort} searchVal={searchGestorTabela} onSearchChange={setSearchGestorTabela} />
-                                    <TextHeader widthClass="w-[7%]" label="AQUISIÇÃO" field="modalidade" current={sortConfig} onSort={handleSort} searchVal={searchModalidadeTabela} onSearchChange={setSearchModalidadeTabela} />
-                                    <TextHeader widthClass="w-[5%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistenciaTabela} onSearchChange={setSearchExistenciaTabela} />
-                                    <TextHeader widthClass="w-[5%]" label="SEC LOG" field="sec_log" current={sortConfig} onSort={handleSort} searchVal={searchSecLogTabela} onSearchChange={setSearchSecLogTabela} />
-                                    <TextHeader widthClass="w-[6%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />
-                                    <TextHeader widthClass="w-[6%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />
-                                    <TextHeader widthClass="w-[12%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />
-                                    <NumericHeader widthClass="w-[5%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    <NumericHeader widthClass="w-[5%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    <NumericHeader widthClass="w-[5%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    <NumericHeader widthClass="w-[5%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    <NumericHeader widthClass="w-[5%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
-                                    <NumericHeader widthClass="w-[5%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />
+                                    {masterCols.dia && <DateFilterHeader widthClass="w-[5%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />}
+                                    {masterCols.contrato && <TextHeader widthClass="w-[8%]" label="CONTRATO/COMPRA" field="contrato" current={sortConfig} onSort={handleSort} searchVal={searchContratoTabela} onSearchChange={setSearchContratoTabela} />}
+                                    {masterCols.sec_log && <TextHeader widthClass="w-[5%]" label="SEC LOG" field="sec_log" current={sortConfig} onSort={handleSort} searchVal={searchSecLogTabela} onSearchChange={setSearchSecLogTabela} />}
+                                    {masterCols.existencia && <TextHeader widthClass="w-[6%]" label="EXISTÊNCIA" field="existencia" current={sortConfig} onSort={handleSort} searchVal={searchExistenciaTabela} onSearchChange={setSearchExistenciaTabela} align="center" />}
+                                    {masterCols.situacao && <TextHeader widthClass="w-[6%]" label="SITUAÇÃO" field="situacao" current={sortConfig} onSort={handleSort} searchVal={searchSituacaoTabela} onSearchChange={setSearchSituacaoTabela} align="center" />}
+                                    {masterCols.movimento && <TextHeader widthClass="w-[6%]" label="MOVIMENTO" field="movimentoStr" current={sortConfig} onSort={handleSort} searchVal={searchMovimentoTabela} onSearchChange={setSearchMovimentoTabela} align="center" />}
+                                    {masterCols.diasAss && <NumericHeader widthClass="w-[5%]" label="DIAS ASS (RO)" field="diasAss" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
+                                    {masterCols.vigencia && <DateFilterHeader widthClass="w-[6%]" label="VIGÊNCIA" field="data_inic" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} align="center" />}
+                                    {masterCols.perc_tempo && <NumericHeader widthClass="w-[6%]" label="% TEMPO" field="perc_tempo" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="center" />}
+                                    {masterCols.emitente && <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitenteTabela} onSearchChange={setSearchEmitenteTabela} />}
+                                    {masterCols.favorecido && <TextHeader widthClass="w-[12%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />}
+                                    {masterCols.objeto && <TextHeader widthClass="w-[10%]" label="OBJETO" field="objeto" current={sortConfig} onSort={handleSort} searchVal={searchObjeto} onSearchChange={setSearchObjeto} />}
+                                    {masterCols.gestor && <TextHeader widthClass="w-[7%]" label="GESTOR/FISCAL" field="gestor" current={sortConfig} onSort={handleSort} searchVal={searchGestorTabela} onSearchChange={setSearchGestorTabela} />}
+                                    {masterCols.empenho && <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />}
+                                    {masterCols.documento && <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />}
+                                    {masterCols.obs && <TextHeader widthClass="w-[12%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />}
+                                    {masterCols.v_emp && <NumericHeader widthClass="w-[6%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_rec && <NumericHeader widthClass="w-[6%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_liq && <NumericHeader widthClass="w-[6%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_pag && <NumericHeader widthClass="w-[6%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_can && <NumericHeader widthClass="w-[6%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_bloq && <NumericHeader widthClass="w-[6%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {filteredData.slice(0, visibleRows).map((row, i) => (
                                     <tr key={i} className="hover:bg-blue-50 transition-colors">
-                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>
-                                        <td className="p-2 text-slate-800 font-black whitespace-normal break-words">{row.contrato}</td>
-                                        <td className="p-2 align-middle text-center">
-                                            <div className="flex flex-wrap items-center justify-center gap-1">
-                                                {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
-                                                    <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td className="p-2 align-middle text-center">
-                                            <div className="flex flex-wrap items-center justify-center gap-1">
-                                                {row.movimentoFlags && row.movimentoFlags.map((f, idx) => (
-                                                    <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td className="p-2 align-middle text-center font-bold text-slate-600">
-                                            {row.diasAss !== null ? (
-                                                <span className={`px-1.5 py-0.5 rounded ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
-                                                    {row.diasAss} d
+                                        {masterCols.dia && <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.dia || "-"}</td>}
+                                        {masterCols.contrato && <td className="p-2 align-top min-w-[150px]"><ContratoCell row={row} /></td>}
+                                        {masterCols.sec_log && <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.sec_log}</td>}
+                                        {masterCols.existencia && (
+                                            <td className="p-2 align-middle text-center">
+                                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${row.existencia === 'AMBAS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : row.existencia === 'GERAL' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-orange-100 text-orange-800 border border-orange-200'}`}>
+                                                    {row.existencia}
                                                 </span>
-                                            ) : "-"}
-                                        </td>
-                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
-                                            <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
-                                            <div className="text-[9px] mt-1 text-slate-600">Fim: {row.data_fim || "-"}</div>
-                                        </td>
-                                        <td className="p-2 align-middle">
-                                            {row.perc_tempo !== null ? (
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="text-[8px] font-bold text-slate-500 text-center">{row.dias_passaram} d decorridos</div>
-                                                    <div className="flex items-center gap-1">
-                                                        <div className="w-full bg-slate-200 rounded-full h-1.5 flex-1 overflow-hidden">
-                                                            <div className={`h-1.5 rounded-full ${row.perc_tempo >= 1 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(Math.max(row.perc_tempo * 100, 0), 100)}%` }}></div>
-                                                        </div>
-                                                        <span className="text-[8px] font-bold text-slate-600 min-w-[30px] text-right">{formatPercentBR(row.perc_tempo)}</span>
-                                                    </div>
-                                                    <div className="text-[8px] font-bold text-center mt-0.5"><span className={row.encerrando_dias < 0 ? 'text-red-500' : 'text-emerald-600'}>{row.encerrando_dias} d restantes</span></div>
+                                            </td>
+                                        )}
+                                        {masterCols.situacao && (
+                                            <td className="p-2 align-middle text-center">
+                                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                                    {row.situacaoFlags && row.situacaoFlags.map((f, idx) => (
+                                                        <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
+                                                    ))}
                                                 </div>
-                                            ) : "-"}
-                                        </td>
-                                        <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>
-                                        <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.objeto}</td>
-                                        <td className="p-2 whitespace-normal break-words">
-                                            <div className="font-bold text-slate-700" title="Gestor">G: {row.gestor}</div>
-                                            <div className="font-bold text-slate-700 mt-1" title="Fiscal">F: {row.fiscal}</div>
-                                        </td>
-                                        <td className="p-2 whitespace-normal break-words">
-                                            <div className="text-[9px] text-slate-600">Mod: {row.modalidade}</div>
-                                            <div className="text-[9px] text-slate-600 mt-1">Cmp: {row.compra}</div>
-                                        </td>
-                                        <td className="p-2 align-middle text-center">
-                                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${row.existencia === 'AMBAS' ? 'bg-blue-100 text-blue-700 border border-blue-200' : row.existencia === 'GERAL' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-orange-100 text-orange-800 border border-orange-200'}`}>
-                                                {row.existencia}
-                                            </span>
-                                        </td>
-                                        <td className="p-2 text-slate-500 font-bold whitespace-normal break-words">{row.sec_log}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>
-                                        <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>
-                                        <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>
-                                        <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30">
-                                            <FormatNegativeValue val={row.v_empenhado} />
-                                        </td>
-                                        <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words">
-                                            <FormatNegativeValue val={row.v_recebido} />
-                                        </td>
-                                        <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30">
-                                            <FormatNegativeValue val={row.v_liquidado} />
-                                        </td>
-                                        <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words">
-                                            <FormatNegativeValue val={row.v_pago} />
-                                        </td>
-                                        <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30">
-                                            <FormatNegativeValue val={row.v_cancelado} />
-                                        </td>
-                                        <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words">
-                                            <FormatNegativeValue val={row.v_bloqueado} />
-                                        </td>
+                                            </td>
+                                        )}
+                                        {masterCols.movimento && (
+                                            <td className="p-2 align-middle text-center">
+                                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                                    {row.movimentoFlags && row.movimentoFlags.map((f, idx) => (
+                                                        <span key={idx} className={`text-[8px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${f.color}`}>{f.label}</span>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                        )}
+                                        {masterCols.diasAss && (
+                                            <td className="p-2 align-middle text-center font-bold text-slate-600">
+                                                {row.diasAss !== null ? (
+                                                    <span className={`px-1.5 py-0.5 rounded ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                                                        {row.diasAss} d
+                                                    </span>
+                                                ) : "-"}
+                                            </td>
+                                        )}
+                                        {masterCols.vigencia && (
+                                            <td className="p-2 text-slate-500 font-bold whitespace-normal break-words text-center">
+                                                <div className="text-[9px] text-slate-400">Iní: {row.data_inic || "-"}</div>
+                                                <div className="text-[9px] mt-1 text-slate-600">Fim: {row.data_fim || "-"}</div>
+                                            </td>
+                                        )}
+                                        {masterCols.perc_tempo && (
+                                            <td className="p-2 align-middle">
+                                                {row.perc_tempo !== null ? (
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="text-[8px] font-bold text-slate-500 text-center">{row.dias_passaram} d decorridos</div>
+                                                        <div className="flex items-center gap-1">
+                                                            <div className="w-full bg-slate-200 rounded-full h-1.5 flex-1 overflow-hidden">
+                                                                <div className={`h-1.5 rounded-full ${row.perc_tempo >= 1 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(Math.max(row.perc_tempo * 100, 0), 100)}%` }}></div>
+                                                            </div>
+                                                            <span className="text-[8px] font-bold text-slate-600 min-w-[30px] text-right">{formatPercentBR(row.perc_tempo)}</span>
+                                                        </div>
+                                                        <div className="text-[8px] font-bold text-center mt-0.5"><span className={row.encerrando_dias < 0 ? 'text-red-500' : 'text-emerald-600'}>{row.encerrando_dias} d restantes</span></div>
+                                                    </div>
+                                                ) : "-"}
+                                            </td>
+                                        )}
+                                        {masterCols.emitente && <td className="p-2 font-bold text-slate-700 whitespace-normal break-words">{row.ug}</td>}
+                                        {masterCols.favorecido && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>}
+                                        {masterCols.objeto && <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.objeto}</td>}
+                                        {masterCols.gestor && (
+                                            <td className="p-2 whitespace-normal break-words">
+                                                <div className="font-bold text-slate-700" title="Gestor">G: {row.gestor}</div>
+                                                <div className="font-bold text-slate-700 mt-1" title="Fiscal">F: {row.fiscal}</div>
+                                            </td>
+                                        )}
+                                        {masterCols.empenho && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>}
+                                        {masterCols.documento && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.documento}</td>}
+                                        {masterCols.obs && <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.obs}</td>}
+                                        
+                                        {masterCols.v_emp && <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30"><FormatNegativeValue val={row.v_empenhado} /></td>}
+                                        {masterCols.v_rec && <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_recebido} /></td>}
+                                        {masterCols.v_liq && <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30"><FormatNegativeValue val={row.v_liquidado} /></td>}
+                                        {masterCols.v_pag && <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_pago} /></td>}
+                                        {masterCols.v_can && <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30"><FormatNegativeValue val={row.v_cancelado} /></td>}
+                                        {masterCols.v_bloq && <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_bloqueado} /></td>}
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                                 <tr className="text-slate-700 uppercase font-black">
-                                    <td colSpan="17" className="p-2 text-right">TOTAIS:</td>
-                                    <td className="p-2 text-right text-blue-800"><FormatNegativeValue val={totalsMaster.emp}/></td>
-                                    <td className="p-2 text-right text-violet-800"><FormatNegativeValue val={totalsMaster.rec}/></td>
-                                    <td className="p-2 text-right text-amber-800"><FormatNegativeValue val={totalsMaster.liq}/></td>
-                                    <td className="p-2 text-right text-emerald-800"><FormatNegativeValue val={totalsMaster.pag}/></td>
-                                    <td className="p-2 text-right text-red-800"><FormatNegativeValue val={totalsMaster.can}/></td>
-                                    <td className="p-2 text-right text-orange-800"><FormatNegativeValue val={totalsMaster.blo}/></td>
+                                    <td colSpan={masterColSpanCount} className="p-2 text-right">TOTAIS:</td>
+                                    {masterCols.v_emp && <td className="p-2 text-right text-blue-800"><FormatNegativeValue val={totalsMaster.emp}/></td>}
+                                    {masterCols.v_rec && <td className="p-2 text-right text-violet-800"><FormatNegativeValue val={totalsMaster.rec}/></td>}
+                                    {masterCols.v_liq && <td className="p-2 text-right text-amber-800"><FormatNegativeValue val={totalsMaster.liq}/></td>}
+                                    {masterCols.v_pag && <td className="p-2 text-right text-emerald-800"><FormatNegativeValue val={totalsMaster.pag}/></td>}
+                                    {masterCols.v_can && <td className="p-2 text-right text-red-800"><FormatNegativeValue val={totalsMaster.can}/></td>}
+                                    {masterCols.v_bloq && <td className="p-2 text-right text-orange-800"><FormatNegativeValue val={totalsMaster.blo}/></td>}
                                 </tr>
                             </tfoot>
                         </table>
@@ -2039,7 +2275,7 @@ function Dashboard() {
                     {visibleRows < filteredData.length && (
                         <div className="p-4 bg-slate-50 border-t flex justify-center">
                             <button onClick={() => setVisibleRows(prev => prev + 100)} className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-6 py-2 rounded transition border border-slate-300 shadow-sm cursor-pointer">
-                                Carregar mais registros (+100)
+                                Ver mais (+100)
                             </button>
                         </div>
                     )}
