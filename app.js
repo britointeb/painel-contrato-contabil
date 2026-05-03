@@ -1,4 +1,38 @@
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwwqirbdPVTmqm9KHHYsnr0zsW9DHmnLaQfVMpJtN6xwwAWg7yNv4_Bcu_1cLlcBaqR/exec";
 const { useState, useEffect, useMemo, useRef } = React;
+
+const AUTH_STORAGE_KEYS = [
+    'token_Contabil',
+    'user_Contabil',
+    'perfil_Contabil',
+    'ativo_Contabil',
+    'validade_Contabil',
+    'duracao_diaria_horas_Contabil',
+    'expira_Contabil'
+];
+
+const clearAuthStorage = () => {
+    try {
+        AUTH_STORAGE_KEYS.forEach(k => sessionStorage.removeItem(k));
+    } catch(e) {}
+};
+
+const isAuthSessionValid = () => {
+    try {
+        const token = sessionStorage.getItem('token_Contabil');
+        if (!token) return false;
+
+        const expira = Number(sessionStorage.getItem('expira_Contabil') || 0);
+        if (expira && Date.now() > expira) {
+            clearAuthStorage();
+            return false;
+        }
+
+        return true;
+    } catch(e) {
+        return false;
+    }
+};
 
 if (window.ChartDataLabels) {
     Chart.register(ChartDataLabels);
@@ -43,13 +77,6 @@ const _decode = (str) => {
     return str; 
 };
 
-const SPREADSHEET_ID_CONTABIL = "1rRup03vk20FWxhbkClXBLVZ2X1N8AZpFyjevbkzP4-w"; 
-const RANGE_CONTABIL = "CONTROLE_EXEC_CONTR_DOC!A:K"; 
-const SPREADSHEET_ID_GERAL = "1Fuhb3HMRzg2kEozkuREFNKYSXtqUCLhZWFFuWM-f3v4"; 
-const RANGE_GERAL = "CONTROLE_EXEC_CONTR!A1:BR2000"; 
-const API_KEY = _decode("01000001 01001001 01111010 01100001 01010011 01111001 01000011 01001011 01110010 01110110 01100001 01101011 01101011 01000010 01001000 00111001 01101100 00110100 01010111 01100010 01010001 01001011 01001110 01110111 01101010 01010000 00110010 01010011 01010000 01001101 01001001 01101110 01110011 01101110 01110100 01000001 01101010 01100011 01000001");
-const API_URL_CONTABIL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_CONTABIL}/values/${RANGE_CONTABIL}?key=${API_KEY}`;
-const API_URL_GERAL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_GERAL}/values/${RANGE_GERAL}?key=${API_KEY}`;
 
 const cSupItemsList = ["SGLS-CLASSE I", "SGLFE-CLASSE II", "SGLC-CLASSE III", "SGLME-CLASSE V (MUN)"];
 const getTodayStr = () => {
@@ -716,10 +743,11 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
 // =========================================================
 function Dashboard() {
     const [rawData, setRawData] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [status, setStatus] = useState("A processar conexão...");
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState("Aguardando sincronização. Clique em SINCRONIZAR APIs para carregar os dados.");
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-    const currentUser = localStorage.getItem('user_Contabil') || 'Usuário';
+    const currentUser = sessionStorage.getItem('user_Contabil') || 'Usuário';
+    const currentPerfil = sessionStorage.getItem('perfil_Contabil') || '';
 
     // Estado de Expansão Global
     const [globalExpandState, setGlobalExpandState] = useState(false);
@@ -863,7 +891,10 @@ function Dashboard() {
     }, [rawData]);
 
     const applyFilterUltimoDia = () => { if (maxDateInfo.iso) { setDDiaDe(maxDateInfo.iso); setDDiaAte(maxDateInfo.iso); } };
-    const logout = () => { try { localStorage.removeItem('isAuth_Contabil'); localStorage.removeItem('user_Contabil'); } catch(e){} window.location.reload(); };
+    const logout = () => {
+        clearAuthStorage();
+        window.location.reload();
+    };
 
     const processMergedData = (contabilRows, geralRows = []) => {
         if (!contabilRows || contabilRows.length < 2) { setStatus("Planilha Contábil vazia ou sem dados válidos."); setLoading(false); return; }
@@ -1087,30 +1118,58 @@ function Dashboard() {
 
     const loadData = async (manualFileContent = null) => {
         setLoading(true);
+
         if (manualFileContent) {
             setStatus("A processar ficheiro manual (Módulo Contábil)...");
-            Papa.parse(manualFileContent, { header: false, skipEmptyLines: true, complete: (res) => { processMergedData(res.data, []); setStatus("Offline - Dados Carregados Manualmente"); } });
+            Papa.parse(manualFileContent, {
+                header: false,
+                skipEmptyLines: true,
+                complete: (res) => {
+                    processMergedData(res.data, []);
+                    setStatus("Offline - Dados carregados manualmente");
+                }
+            });
             return;
         }
-        try {
-            setStatus("A transferir dados de Múltiplas APIs...");
-            const [respContabil, respGeral] = await Promise.all([
-                fetch(API_URL_CONTABIL),
-                fetch(API_URL_GERAL).catch(() => null) 
-            ]);
-            if (!respContabil.ok) throw new Error("Falha na API Contábil.");
-            const jsonContabil = await respContabil.json();
-            const jsonGeral = respGeral && respGeral.ok ? await respGeral.json() : { values: [] };
 
-            processMergedData(jsonContabil.values, jsonGeral.values);
-            setStatus("Online - APIs Integradas com Sucesso");
-        } catch (error) { 
-            setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV)."); 
-            setLoading(false); 
+        try {
+            setStatus("A transferir dados pelo Apps Script...");
+
+            const token = sessionStorage.getItem("token_Contabil");
+
+            if (!token) {
+                throw new Error("Token de acesso não encontrado. Faça login novamente.");
+            }
+
+            const url = `${APPS_SCRIPT_URL}?acao=dados&token=${encodeURIComponent(token)}`;
+
+            const resp = await fetch(url);
+            const json = await resp.json();
+
+            if (!json.ok) {
+                const mensagem = json.mensagem || "Falha ao obter dados.";
+                if (/sess[aã]o|expirad|token/i.test(mensagem)) {
+                    clearAuthStorage();
+                    window.location.reload();
+                    return;
+                }
+                throw new Error(mensagem);
+            }
+
+            processMergedData(json.contabil, json.geral);
+
+            setStatus("Online - Dados carregados via Apps Script");
+
+        } catch (error) {
+            console.error(error);
+            setStatus(error.message || "Falha de comunicação. Faça login novamente ou utilize a carga manual.");
+            setLoading(false);
         }
     };
 
-    useEffect(() => { loadData(); }, []);
+    // Não carregar dados automaticamente no refresh.
+    // A chamada à API agora ocorre apenas pelo botão "SINCRONIZAR APIs".
+
 
     const filteredData = useMemo(() => {
         let filtered = rawData.filter(item => {
@@ -1447,18 +1506,85 @@ function Dashboard() {
 
     const matrixData = useMemo(() => {
         const map = {};
+
+        const getMatrixGroupMeta = (item) => {
+            const secLog = item.sec_log || "N/I";
+            const contrato = item.contrato || "-";
+            const empenho = item.empenho || "-";
+
+            if (matrixGroupBy === 'contrato') {
+                return {
+                    key: contrato,
+                    sec_log: secLog,
+                    contrato,
+                    compra: item.compra,
+                    modalidade: item.modalidade,
+                    empenho: "VÁRIOS"
+                };
+            }
+
+            if (matrixGroupBy === 'sec_log') {
+                return {
+                    key: secLog,
+                    sec_log: secLog,
+                    contrato: "VÁRIOS",
+                    compra: "-",
+                    modalidade: "-",
+                    empenho: "VÁRIOS"
+                };
+            }
+
+            if (matrixGroupBy === 'sec_log_contrato_empenho') {
+                return {
+                    key: `${secLog}|${contrato}|${empenho}`,
+                    sec_log: secLog,
+                    contrato,
+                    compra: item.compra,
+                    modalidade: item.modalidade,
+                    empenho
+                };
+            }
+
+            return {
+                key: `${contrato}|${empenho}`,
+                sec_log: secLog,
+                contrato,
+                compra: item.compra,
+                modalidade: item.modalidade,
+                empenho
+            };
+        };
+
         filteredData.forEach(item => {
             if(!item.contrato || item.contrato === "-") return;
-            const key = matrixGroupBy === 'contrato' ? item.contrato : `${item.contrato}|${item.empenho}`;
+
+            const meta = getMatrixGroupMeta(item);
+            const key = meta.key;
+
             if(!map[key]) {
                 map[key] = {
-                    contrato: item.contrato, compra: item.compra, modalidade: item.modalidade, empenho: matrixGroupBy === 'contrato' ? "VÁRIOS" : item.empenho, dtInicVal: item.dtInicVal, min_ro_val: Infinity,
+                    sec_log: meta.sec_log,
+                    contrato: meta.contrato,
+                    compra: meta.compra,
+                    modalidade: meta.modalidade,
+                    empenho: meta.empenho,
+                    dtInicVal: item.dtInicVal,
+                    min_ro_val: Infinity,
                     docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set(), docs_bloq: new Set(), docs_can: new Set(),
                     v_emp: 0, v_rec: 0, v_liq: 0, v_pag: 0, v_bloq: 0, v_can: 0
                 };
             }
+
             const m = map[key];
-            if (item.documento.includes("RO") && item.diaVal > 0) { if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal; }
+
+            if (item.dtInicVal && (!m.dtInicVal || item.dtInicVal < m.dtInicVal)) {
+                m.dtInicVal = item.dtInicVal;
+            }
+
+            if (item.documento.includes("RO") && item.diaVal > 0) {
+                if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal;
+            }
+
             if (item.has_empenhado) m.docs_emp.add(item.documento);
             if (item.has_recebido) m.docs_rec.add(item.documento);
             if (item.has_liquidado) m.docs_liq.add(item.documento);
@@ -1472,10 +1598,17 @@ function Dashboard() {
 
         let arr = Object.values(map).map(m => {
             let diasAss = null;
-            if (m.min_ro_val !== Infinity && m.dtInicVal) { diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000); }
+            if (matrixGroupBy !== 'sec_log' && m.min_ro_val !== Infinity && m.dtInicVal) {
+                diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000);
+            }
             let v_saldo_exec = m.v_emp - m.v_liq - m.v_can - m.v_bloq;
             return {
-                contrato: m.contrato, compra: m.compra, modalidade: m.modalidade, empenho: m.empenho, diasAss: diasAss,
+                sec_log: m.sec_log,
+                contrato: m.contrato,
+                compra: m.compra,
+                modalidade: m.modalidade,
+                empenho: m.empenho,
+                diasAss: diasAss,
                 qtd_emp: m.docs_emp.size, qtd_rec: m.docs_rec.size, qtd_liq: m.docs_liq.size, qtd_pag: m.docs_pag.size, qtd_bloq: m.docs_bloq.size, qtd_can: m.docs_can.size,
                 v_emp: m.v_emp, v_rec: m.v_rec, v_liq: m.v_liq, v_pag: m.v_pag, v_bloq: m.v_bloq, v_can: m.v_can, v_saldo_exec: v_saldo_exec,
                 sortVal: m.min_ro_val !== Infinity ? m.min_ro_val : Number.MAX_SAFE_INTEGER
@@ -1511,11 +1644,22 @@ function Dashboard() {
         return { sumQtdEmp, sumQtdRec, sumQtdLiq, sumQtdPag, sumQtdBloq, sumQtdCan, sumVEmp, sumVRec, sumVLiq, sumVPag, sumVBloq, sumVCan, sumVSaldoExec, mediaDias };
     }, [matrixData]);
 
-    const matrixUniqueContratos = useMemo(() => new Set(matrixData.map(d => d.contrato)).size, [matrixData]);
+    const matrixUniqueContratos = useMemo(() => {
+        return new Set(filteredData.filter(d => d.contrato && d.contrato !== '-').map(d => d.contrato)).size;
+    }, [filteredData]);
+
     const matrixUniqueEmpenhos = useMemo(() => {
-        if (matrixGroupBy === 'contrato_empenho') return matrixData.length;
-        return new Set(filteredData.filter(d => d.empenho && d.empenho !== '-').map(d => `${d.contrato}|${d.empenho}`)).size;
-    }, [matrixData, filteredData, matrixGroupBy]);
+        return new Set(filteredData.filter(d => d.empenho && d.empenho !== '-' && d.contrato && d.contrato !== '-').map(d => `${d.contrato}|${d.empenho}`)).size;
+    }, [filteredData]);
+
+    const matrixUniqueSecLogs = useMemo(() => {
+        return new Set(filteredData.filter(d => d.sec_log && d.sec_log !== '-').map(d => d.sec_log)).size;
+    }, [filteredData]);
+
+    const matrixShowsSecLog = matrixGroupBy === 'sec_log' || matrixGroupBy === 'sec_log_contrato_empenho';
+    const matrixShowsContrato = matrixGroupBy !== 'sec_log';
+    const matrixShowsEmpenho = matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
+    const matrixLeadingColsCount = (matrixShowsSecLog ? 1 : 0) + (matrixShowsContrato ? 1 : 0) + (matrixShowsEmpenho ? 1 : 0);
 
     const renderMatrixHeader = (label, key, extraClass = "") => {
         const isSorted = matrixSort.key === key;
@@ -1557,8 +1701,10 @@ function Dashboard() {
     };
 
     const getMatrixExportColumns = () => {
-        let cols = [{ header: "CONTRATO", key: "contrato", format: (r) => `${r.contrato}\nCompra: ${r.compra}\nMod: ${r.modalidade}` }];
-        if (matrixGroupBy === 'contrato_empenho') cols.push({ header: "EMPENHO", key: "empenho" });
+        let cols = [];
+        if (matrixShowsSecLog) cols.push({ header: "SEC LOG", key: "sec_log" });
+        if (matrixShowsContrato) cols.push({ header: "CONTRATO", key: "contrato", format: (r) => `${r.contrato}\nCompra: ${r.compra}\nMod: ${r.modalidade}` });
+        if (matrixShowsEmpenho) cols.push({ header: "EMPENHO", key: "empenho" });
         cols.push({ header: "DIAS ATÉ ASS. (RO)", key: "diasAss" });
         if (matrixVisibleCols.emp) { cols.push({ header: "QTD DOC EMP", key: "qtd_emp" }); cols.push({ header: "R$ EMPENHADO", key: "v_emp", isCurrency: true }); }
         if (matrixVisibleCols.rec) { cols.push({ header: "QTD DOC REC", key: "qtd_rec" }); cols.push({ header: "R$ RECEBIDO", key: "v_rec", isCurrency: true }); }
@@ -1608,7 +1754,7 @@ function Dashboard() {
                     <input type="file" accept=".csv" onChange={(e) => { const r = new FileReader(); r.onload = (ev) => loadData(ev.target.result); r.readAsText(e.target.files[0]); }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
                     <div className="w-[1px] h-6 bg-slate-300 mx-1 hidden sm:block"></div>
                     <button onClick={() => loadData()} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition">SINCRONIZAR APIs</button>
-                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span></span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span>{currentPerfil && <span className="text-slate-400"> ({currentPerfil})</span>}</span>
                     <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition ml-2">SAIR</button>
                 </div>
             </header>
@@ -1781,12 +1927,14 @@ function Dashboard() {
                     <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                         <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
                             <h3 className="text-white text-xs font-black tracking-widest uppercase">
-                                MATRIZ QTD DE DOCUMENTOS POR EMPENHO ({Math.min(matrixLimit, matrixData.length)} de {matrixData.length} — {matrixUniqueContratos} Contratos | {matrixUniqueEmpenhos} Empenhos)
+                                MATRIZ QTD DE DOCUMENTOS POR EMPENHO ({Math.min(matrixLimit, matrixData.length)} de {matrixData.length} — {matrixShowsSecLog ? `${matrixUniqueSecLogs} SEC LOG | ` : ""}{matrixUniqueContratos} Contratos | {matrixUniqueEmpenhos} Empenhos)
                             </h3>
                             <div className="flex gap-2 items-center">
                                 <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[9px] font-bold border border-slate-600 rounded px-2 py-1 outline-none shadow-sm text-white bg-slate-700">
                                     <option value="contrato_empenho">Por Contrato e Empenho</option>
                                     <option value="contrato">Apenas por Contrato</option>
+                                    <option value="sec_log">Apenas por SEC LOG</option>
+                                    <option value="sec_log_contrato_empenho">Por SEC LOG, Contrato e Empenho</option>
                                 </select>
                                 <div className="relative">
                                     <button onClick={() => setShowMatrixCols(!showMatrixCols)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
@@ -1813,8 +1961,9 @@ function Dashboard() {
                             <table className="w-full text-left text-[9px] border-collapse relative">
                                 <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                     <tr className="text-slate-600 uppercase font-black tracking-tighter">
-                                        {renderMatrixHeader('CONTRATO', 'contrato', 'text-left')}
-                                        {matrixGroupBy === 'contrato_empenho' && renderMatrixHeader('EMPENHO', 'empenho')}
+                                        {matrixShowsSecLog && renderMatrixHeader('SEC LOG', 'sec_log', 'text-left')}
+                                        {matrixShowsContrato && renderMatrixHeader('CONTRATO', 'contrato', 'text-left')}
+                                        {matrixShowsEmpenho && renderMatrixHeader('EMPENHO', 'empenho')}
                                         <th className="p-3 whitespace-nowrap text-center cursor-pointer hover:bg-slate-200 transition" title="Dias do RO mais antigo até Vigência Incial" onClick={() => handleMatrixSort('diasAss')}>
                                             <div className="flex items-center gap-1 justify-center">
                                                 DIAS ATÉ ASS. (RO) <span className="text-[8px] text-slate-400">{matrixSort.key === 'diasAss' ? (matrixSort.direction === 'asc' ? '▲' : '▼') : '↕'}</span>
@@ -1832,8 +1981,9 @@ function Dashboard() {
                                 <tbody className="divide-y divide-slate-100">
                                     {matrixData.slice(0, matrixLimit).map((row, i) => (
                                         <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                            <td className="p-3 font-black text-slate-800 break-words min-w-[150px]"><ContratoCell row={row} /></td>
-                                            {matrixGroupBy === 'contrato_empenho' && <td className="p-3 font-bold text-slate-600 break-words text-center whitespace-nowrap">{row.empenho}</td>}
+                                            {matrixShowsSecLog && <td className="p-3 font-black text-slate-700 break-words min-w-[120px]">{row.sec_log}</td>}
+                                            {matrixShowsContrato && <td className="p-3 font-black text-slate-800 break-words min-w-[150px]"><ContratoCell row={row} /></td>}
+                                            {matrixShowsEmpenho && <td className="p-3 font-bold text-slate-600 break-words text-center whitespace-nowrap">{row.empenho}</td>}
                                             <td className="p-3 text-center align-middle">
                                                 {row.diasAss !== null ? (
                                                     <span className={`px-2 py-1 rounded font-bold text-[9px] ${row.diasAss >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
@@ -1856,7 +2006,7 @@ function Dashboard() {
                                 </tbody>
                                 <tfoot className="bg-slate-200 sticky bottom-0 border-t-2 border-slate-300 shadow-md z-10">
                                     <tr className="text-slate-700 uppercase font-black">
-                                        <td colSpan={matrixGroupBy === 'contrato_empenho' ? 2 : 1} className="p-3 text-right">TOTAIS:</td>
+                                        <td colSpan={matrixLeadingColsCount} className="p-3 text-right">TOTAIS:</td>
                                         <td className="p-3 text-center align-middle">
                                             <div className="text-[10px]">{matrixTotals.mediaDias !== '-' ? `${matrixTotals.mediaDias} d (Média)` : '-'}</div>
                                             <div className="text-[7px] text-slate-500 font-bold leading-tight mt-0.5">*Exclui vals. negativos</div>
@@ -2302,7 +2452,10 @@ class ErrorBoundary extends React.Component {
             <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-8">
                 <h2 className="text-2xl font-black text-red-600 mb-4 uppercase tracking-tighter">Erro Detetado no Painel Contábil</h2>
                 <p className="text-slate-700 mb-6 font-bold bg-white p-4 rounded shadow-sm border border-red-200">{this.state.error.toString()}</p>
-                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
+                <button onClick={() => {
+                    clearAuthStorage();
+                    window.location.reload();
+                }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
             </div>
         );
         return this.props.children; 
@@ -2310,55 +2463,157 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(() => { try { return localStorage.getItem('isAuth_Contabil') === 'true'; } catch(e) { return false; } });
+    const [isAuthenticated, setIsAuthenticated] = useState(() => isAuthSessionValid());
+
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [isLogging, setIsLogging] = useState(false);
 
-    const handleLogin = (e) => {
+    useEffect(() => {
+        if (!isAuthenticated) return;
+
+        const expira = Number(sessionStorage.getItem('expira_Contabil') || 0);
+        if (!expira) return;
+
+        const ms = expira - Date.now();
+        if (ms <= 0) {
+            clearAuthStorage();
+            setIsAuthenticated(false);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            clearAuthStorage();
+            setIsAuthenticated(false);
+            setError("Sessão expirada. Faça login novamente.");
+        }, Math.min(ms, 2147483647));
+
+        return () => clearTimeout(timer);
+    }, [isAuthenticated]);
+
+    const handleLogin = async (e) => {
         e.preventDefault();
-        const users = {};
-        users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
-        users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
-        users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
-        users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
-        users[_decode("01100010 01101111 01110101 01101100 01100101 01110111 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
+        setError("");
+        setIsLogging(true);
 
-        const inputUser = username.toLowerCase().trim();
-        if (users[inputUser] && users[inputUser] === password) {
+        try {
+            const body = new URLSearchParams();
+            body.append("acao", "login");
+            body.append("usuario", username);
+            body.append("senha", password);
+
+            const resp = await fetch(APPS_SCRIPT_URL, {
+                method: "POST",
+                body: body
+            });
+
+            const json = await resp.json();
+
+            if (!json.ok) {
+                setError(json.mensagem || "Credenciais inválidas.");
+                setIsLogging(false);
+                return;
+            }
+
+            sessionStorage.setItem("token_Contabil", json.token);
+            sessionStorage.setItem("user_Contabil", json.usuario.nome || username);
+            sessionStorage.setItem("perfil_Contabil", json.usuario.perfil || "");
+            sessionStorage.setItem("ativo_Contabil", json.usuario.ativo || "");
+            sessionStorage.setItem("validade_Contabil", json.usuario.validade || "");
+            sessionStorage.setItem("duracao_diaria_horas_Contabil", json.usuario.duracao_diaria_horas || "");
+
+            if (json.usuario.expira_em) {
+                sessionStorage.setItem("expira_Contabil", String(json.usuario.expira_em));
+            } else {
+                sessionStorage.removeItem("expira_Contabil");
+            }
+
             setIsAuthenticated(true);
-            try { localStorage.setItem('isAuth_Contabil', 'true'); localStorage.setItem('user_Contabil', inputUser); } catch(e) {}
-            setError("");
-        } else {
-            setError("Credenciais inválidas. Verifique o usuário e a senha.");
+            setIsLogging(false);
+
+        } catch (erro) {
+            console.error(erro);
+            setError("Falha ao tentar fazer login. Verifique a conexão ou a publicação do Apps Script.");
+            setIsLogging(false);
         }
     };
 
     if (!isAuthenticated) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-800 relative overflow-hidden">
-                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+                <div
+                    className="absolute inset-0 opacity-10 pointer-events-none"
+                    style={{
+                        backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
+                        backgroundSize: '20px 20px'
+                    }}
+                ></div>
+
                 <div className="bg-white p-8 rounded-2xl shadow-2xl w-[400px] max-w-[90%] border-t-8 border-blue-600 relative z-10">
                     <div className="text-center mb-8">
-                        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Acesso Restrito</h1>
-                        <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">Painel de Documentos Contábeis</p>
+                        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">
+                            Acesso Restrito
+                        </h1>
+                        <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">
+                            Painel de Documentos Contábeis
+                        </p>
                     </div>
+
                     <form onSubmit={handleLogin} className="space-y-5">
                         <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
-                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="Digite o seu usuário..." />
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                                Usuário
+                            </label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all"
+                                placeholder="Digite o seu usuário..."
+                                autoComplete="username"
+                            />
                         </div>
+
                         <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
-                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="••••••••" />
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
+                                Senha
+                            </label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all"
+                                placeholder="••••••••"
+                                autoComplete="current-password"
+                            />
                         </div>
-                        {error && (<div className="bg-red-50 border-l-4 border-red-500 p-3 rounded"><p className="text-[11px] font-bold text-red-600 text-center">{error}</p></div>)}
-                        <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2">Autenticar Acesso</button>
+
+                        {error && (
+                            <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
+                                <p className="text-[11px] font-bold text-red-600 text-center">
+                                    {error}
+                                </p>
+                            </div>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={isLogging}
+                            className={`w-full text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2 ${
+                                isLogging
+                                    ? "bg-slate-400 cursor-wait"
+                                    : "bg-slate-800 hover:bg-slate-900"
+                            }`}
+                        >
+                            {isLogging ? "Autenticando..." : "Autenticar Acesso"}
+                        </button>
                     </form>
                 </div>
             </div>
         );
     }
+
     return <ErrorBoundary><Dashboard /></ErrorBoundary>;
 }
 
