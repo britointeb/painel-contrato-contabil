@@ -1,38 +1,4 @@
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwwqirbdPVTmqm9KHHYsnr0zsW9DHmnLaQfVMpJtN6xwwAWg7yNv4_Bcu_1cLlcBaqR/exec";
 const { useState, useEffect, useMemo, useRef } = React;
-
-const AUTH_STORAGE_KEYS = [
-    'token_Contabil',
-    'user_Contabil',
-    'perfil_Contabil',
-    'ativo_Contabil',
-    'validade_Contabil',
-    'duracao_diaria_horas_Contabil',
-    'expira_Contabil'
-];
-
-const clearAuthStorage = () => {
-    try {
-        AUTH_STORAGE_KEYS.forEach(k => sessionStorage.removeItem(k));
-    } catch(e) {}
-};
-
-const isAuthSessionValid = () => {
-    try {
-        const token = sessionStorage.getItem('token_Contabil');
-        if (!token) return false;
-
-        const expira = Number(sessionStorage.getItem('expira_Contabil') || 0);
-        if (expira && Date.now() > expira) {
-            clearAuthStorage();
-            return false;
-        }
-
-        return true;
-    } catch(e) {
-        return false;
-    }
-};
 
 if (window.ChartDataLabels) {
     Chart.register(ChartDataLabels);
@@ -77,6 +43,13 @@ const _decode = (str) => {
     return str; 
 };
 
+const SPREADSHEET_ID_CONTABIL = "1rRup03vk20FWxhbkClXBLVZ2X1N8AZpFyjevbkzP4-w"; 
+const RANGE_CONTABIL = "CONTROLE_EXEC_CONTR_DOC!A:K"; 
+const SPREADSHEET_ID_GERAL = "1Fuhb3HMRzg2kEozkuREFNKYSXtqUCLhZWFFuWM-f3v4"; 
+const RANGE_GERAL = "CONTROLE_EXEC_CONTR!A1:BR2000"; 
+const API_KEY = _decode("01000001 01001001 01111010 01100001 01010011 01111001 01000011 01001011 01110010 01110110 01100001 01101011 01101011 01000010 01001000 00111001 01101100 00110100 01010111 01100010 01010001 01001011 01001110 01110111 01101010 01010000 00110010 01010011 01010000 01001101 01001001 01101110 01110011 01101110 01110100 01000001 01101010 01100011 01000001");
+const API_URL_CONTABIL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_CONTABIL}/values/${RANGE_CONTABIL}?key=${API_KEY}`;
+const API_URL_GERAL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_GERAL}/values/${RANGE_GERAL}?key=${API_KEY}`;
 
 const cSupItemsList = ["SGLS-CLASSE I", "SGLFE-CLASSE II", "SGLC-CLASSE III", "SGLME-CLASSE V (MUN)"];
 const getTodayStr = () => {
@@ -111,11 +84,35 @@ const shortenNumber = (num) => {
     return num.toString();
 };
 const parseDateBR = (dStr) => {
-    if (!dStr || dStr === "-") return null;
-    if (dStr.includes('-')) return new Date(dStr + "T00:00:00");
-    const parts = dStr.split('/');
-    if (parts.length === 3) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00`);
-    return new Date(dStr);
+    if (dStr === null || dStr === undefined || dStr === "" || dStr === "-") return null;
+    if (dStr instanceof Date) return isNaN(dStr.getTime()) ? null : dStr;
+    if (typeof dStr === 'number') {
+        const serialDate = new Date(Math.round((dStr - 25569) * 86400 * 1000));
+        return isNaN(serialDate.getTime()) ? null : serialDate;
+    }
+    const raw = String(dStr).trim();
+    if (!raw || raw === "-") return null;
+
+    const brMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (brMatch) {
+        const dia = brMatch[1].padStart(2, '0');
+        const mes = brMatch[2].padStart(2, '0');
+        const ano = brMatch[3];
+        const brDate = new Date(`${ano}-${mes}-${dia}T00:00:00`);
+        return isNaN(brDate.getTime()) ? null : brDate;
+    }
+
+    const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+        const ano = isoMatch[1];
+        const mes = isoMatch[2].padStart(2, '0');
+        const dia = isoMatch[3].padStart(2, '0');
+        const isoDate = new Date(`${ano}-${mes}-${dia}T00:00:00`);
+        return isNaN(isoDate.getTime()) ? null : isoDate;
+    }
+
+    const date = new Date(raw);
+    return isNaN(date.getTime()) ? null : date;
 };
 const formatLabelMultiLine = (text, maxLength = 18) => {
     if (!text) return [""];
@@ -443,7 +440,7 @@ function KPICard({ title, value, subValue, diffText, percSuffix, color, isCurren
             <h3 className="text-[10px] font-black uppercase tracking-widest opacity-50 mb-1 truncate" title={title}>{title}</h3>
             <div className="flex flex-col w-full min-w-0">
                 <AutoFitText text={mainText} className="font-black text-2xl tracking-tight" />
-                {diffText && <div className="text-[10px] font-bold text-slate-500 mt-1 truncate">{diffText}</div>}
+                {diffText && <div className={`text-[10px] font-bold mt-1 truncate ${diffText.includes('Glob') ? 'text-red-600' : 'text-slate-500'}`}>{diffText}</div>}
                 {subValue !== undefined && <div className="text-[10px] font-bold opacity-70 mt-1 truncate">{subText}</div>}
                 {extraText && (
                     <div className="text-[9.5px] font-bold text-slate-500 mt-2 leading-[1.1] border-t border-slate-100 pt-1">
@@ -553,9 +550,10 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
         if (sortConfig.key) {
             filtered.sort((a, b) => {
                 let valA = a[sortConfig.key], valB = b[sortConfig.key];
-                if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
+                if (sortConfig.key === 'dia') { valA = a.diaVal; valB = b.diaVal; }
+                else if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
                 else if (sortConfig.key === 'data_fim') { valA = a.dtFimVal; valB = b.dtFimVal; }
-                if (valA === null) valA = -Number.MAX_VALUE; if (valB === null) valB = -Number.MAX_VALUE;
+                if (valA === null || valA === undefined) valA = -Number.MAX_VALUE; if (valB === null || valB === undefined) valB = -Number.MAX_VALUE;
                 if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -743,11 +741,10 @@ function SubTable({ title, data, metricField, metricLabel, headerColor, rowBgCol
 // =========================================================
 function Dashboard() {
     const [rawData, setRawData] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [status, setStatus] = useState("Aguardando sincronização. Clique em SINCRONIZAR APIs para carregar os dados.");
+    const [loading, setLoading] = useState(true);
+    const [status, setStatus] = useState("A processar conexão...");
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-    const currentUser = sessionStorage.getItem('user_Contabil') || 'Usuário';
-    const currentPerfil = sessionStorage.getItem('perfil_Contabil') || '';
+    const currentUser = localStorage.getItem('user_Contabil') || 'Usuário';
 
     // Estado de Expansão Global
     const [globalExpandState, setGlobalExpandState] = useState(false);
@@ -804,7 +801,7 @@ function Dashboard() {
         dia: true, contrato: true, sec_log: true, situacao: true, movimento: true, diasAss: true,
         vigencia: true, perc_tempo: true, emitente: true, favorecido: true, objeto: true,
         gestor: true, existencia: true, empenho: true, documento: true, obs: true, 
-        v_emp: true, v_rec: true, v_liq: true, v_pag: true, v_can: true, v_bloq: true
+        v_emp: true, v_rec: true, v_liq: true, v_aliq: true, v_pag: true, v_apag: true, v_can: true, v_bloq: true
     });
 
     const [areaAggLevel, setAreaAggLevel] = useState('mes');
@@ -814,12 +811,12 @@ function Dashboard() {
     const [matrixSort, setMatrixSort] = useState({ key: 'sortVal', direction: 'asc' });
     const [matrixLimit, setMatrixLimit] = useState(100);
 
-    const [matrixVisibleCols, setMatrixVisibleCols] = useState({ emp: true, rec: true, liq: true, pag: true, bloq: true, can: true, saldo: true });
+    const [matrixVisibleCols, setMatrixVisibleCols] = useState({ emp: true, rec: true, liq: true, aliq: true, pag: true, apag: true, bloq: true, can: true, saldo: true });
     const [showMatrixCols, setShowMatrixCols] = useState(false);
 
     const initialNumFilters = {
         v_empenhado: {min:'', max:''}, v_recebido: {min:'', max:''}, 
-        v_liquidado: {min:'', max:''}, v_pago: {min:'', max:''},
+        v_liquidado: {min:'', max:''}, v_a_liquidar: {min:'', max:''}, v_pago: {min:'', max:''}, v_a_pagar: {min:'', max:''},
         v_cancelado: {min:'', max:''}, v_bloqueado: {min:'', max:''},
         perc_tempo: {min:'', max:''}, diasAss: {min:'', max:''}
     };
@@ -850,26 +847,16 @@ function Dashboard() {
     const p30Doc = new Date(); p30Doc.setDate(todayD.getDate() - 30);
     const ps30Doc = `${p30Doc.getFullYear()}-${String(p30Doc.getMonth()+1).padStart(2,'0')}-${String(p30Doc.getDate()).padStart(2,'0')}`;
 
-    const f7Contr = new Date(); f7Contr.setDate(todayD.getDate() + 7);
-    const fs7Contr = `${f7Contr.getFullYear()}-${String(f7Contr.getMonth()+1).padStart(2,'0')}-${String(f7Contr.getDate()).padStart(2,'0')}`;
-
-    const f30Contr = new Date(); f30Contr.setDate(todayD.getDate() + 30);
-    const fs30Contr = `${f30Contr.getFullYear()}-${String(f30Contr.getMonth()+1).padStart(2,'0')}-${String(f30Contr.getDate()).padStart(2,'0')}`;
-
     const isDoc7DiasActive = dDiaDe === ps7Doc && dDiaAte === ts;
     const isDoc30DiasActive = dDiaDe === ps30Doc && dDiaAte === ts;
 
     const isContratosVigentesActive = dFimDe === ts && dFimAte === "";
-    const isContrVencendo7DiasActive = dFimDe === ts && dFimAte === fs7Contr;
-    const isContrVencendo30DiasActive = dFimDe === ts && dFimAte === fs30Contr;
     const isContr7DiasActive = dFimDe === ps7Doc && dFimAte === ts;
     const isContr30DiasActive = dFimDe === ps30Doc && dFimAte === ts;
 
     const toggleDoc7Dias = () => { if (isDoc7DiasActive) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps7Doc); setDDiaAte(ts); } };
     const toggleDoc30Dias = () => { if (isDoc30DiasActive) { setDDiaDe(""); setDDiaAte(""); } else { setDDiaDe(ps30Doc); setDDiaAte(ts); } };
     const toggleContratosVigentes = () => { if (isContratosVigentesActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ts); setDFimAte(""); } };
-    const toggleContrVencendo7Dias = () => { if (isContrVencendo7DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ts); setDFimAte(fs7Contr); } };
-    const toggleContrVencendo30Dias = () => { if (isContrVencendo30DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ts); setDFimAte(fs30Contr); } };
     const toggleContr7Dias = () => { if (isContr7DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ps7Doc); setDFimAte(ts); } };
     const toggleContr30Dias = () => { if (isContr30DiasActive) { setDFimDe(""); setDFimAte(""); } else { setDFimDe(ps30Doc); setDFimAte(ts); } };
 
@@ -901,10 +888,7 @@ function Dashboard() {
     }, [rawData]);
 
     const applyFilterUltimoDia = () => { if (maxDateInfo.iso) { setDDiaDe(maxDateInfo.iso); setDDiaAte(maxDateInfo.iso); } };
-    const logout = () => {
-        clearAuthStorage();
-        window.location.reload();
-    };
+    const logout = () => { try { localStorage.removeItem('isAuth_Contabil'); localStorage.removeItem('user_Contabil'); } catch(e){} window.location.reload(); };
 
     const processMergedData = (contabilRows, geralRows = []) => {
         if (!contabilRows || contabilRows.length < 2) { setStatus("Planilha Contábil vazia ou sem dados válidos."); setLoading(false); return; }
@@ -933,6 +917,7 @@ function Dashboard() {
                 const v_executado_g = parseValue(getVG(["TOTAL EXECUTADO"], [], row));
                 const v_bloqueado_g = parseValue(getVG(["TOTAL BLOQUEADO"], [], row));
                 const v_cancelado_g = parseValue(getVG(["TOTAL CANCELADO"], [], row));
+                const v_global_g = parseValue(getVG(["TOTAL GLOBAL", "VALOR GLOBAL", "VALOR GLOBAL DO CONTRATO", "VALOR DO CONTRATO", "VALOR CONTRATO", "GLOBAL"], ["valor global", "global"], row));
 
                 const dtInicParsed = parseDateBR(getVG(["Vig. Início", "Vigencia Inicio"], [], row));
                 const dtFimParsed = parseDateBR(getVG(["Vig. Fim", "Vigencia Fim"], [], row));
@@ -974,6 +959,7 @@ function Dashboard() {
 
                 geralDict[contrato] = {
                     fornecedor: getVG(["Fornecedor"], [], row).toUpperCase() || "N/I",
+                    global: v_global_g,
                     fiscal: getVG(["FISCAL_TITULAR", "Fiscal Titular"], ["fiscal"], row).toUpperCase() || "N/I",
                     gestor: getVG(["GESTOR_TITULAR", "Gestor Titular"], ["gestor"], row).toUpperCase() || "N/I",
                     fiscal_sub: getVG(["FISCAL_SUBSTITUTO", "Fiscal Substituto"], ["fiscal sub"], row).toUpperCase() || "N/I",
@@ -1050,6 +1036,7 @@ function Dashboard() {
                 grouped[key] = {
                     dia, diaVal,
                     ug, favorecido: fav, empenho, documento: doc, obs, contrato,
+                    v_global: metadadosContrato ? metadadosContrato.global : 0,
                     fiscal: metadadosContrato ? metadadosContrato.fiscal : 'N/I', 
                     gestor: metadadosContrato ? metadadosContrato.gestor : 'N/I', 
                     fiscal_sub: metadadosContrato ? metadadosContrato.fiscal_sub : 'N/I', 
@@ -1089,6 +1076,7 @@ function Dashboard() {
                 grouped[`DUMMY|${contratoGeral}`] = {
                     dia: "-", diaVal: 0,
                     ug: "-", favorecido: meta.fornecedor, empenho: "-", documento: "-", obs: "SEM LANÇAMENTOS CONTÁBEIS", contrato: contratoGeral,
+                    v_global: meta.global || 0,
                     fiscal: meta.fiscal, gestor: meta.gestor, fiscal_sub: meta.fiscal_sub, gestor_sub: meta.gestor_sub,
                     sec_log: meta.sec_log, modalidade: meta.modalidade, compra: meta.compra, objeto: meta.objeto,
                     situacaoFlags: meta.situacaoFlags, situacao: meta.situacao,
@@ -1120,6 +1108,8 @@ function Dashboard() {
             if (g.has_bloqueado) { g.movimentoFlags.push({label:'BLOQ', color:'bg-orange-100 text-orange-800 border border-orange-200'}); movStr += "BLOQ "; }
             if (g.has_cancelado) { g.movimentoFlags.push({label:'CAN', color:'bg-red-100 text-red-800 border border-red-200'}); movStr += "CAN "; }
             g.movimentoStr = movStr.trim();
+            g.v_a_liquidar = Math.max(0, g.v_empenhado - g.v_liquidado - g.v_bloqueado - g.v_cancelado);
+            g.v_a_pagar = Math.max(0, g.v_empenhado - g.v_pago - g.v_bloqueado - g.v_cancelado);
         });
         
         setRawData(Object.values(grouped));
@@ -1128,58 +1118,30 @@ function Dashboard() {
 
     const loadData = async (manualFileContent = null) => {
         setLoading(true);
-
         if (manualFileContent) {
             setStatus("A processar ficheiro manual (Módulo Contábil)...");
-            Papa.parse(manualFileContent, {
-                header: false,
-                skipEmptyLines: true,
-                complete: (res) => {
-                    processMergedData(res.data, []);
-                    setStatus("Offline - Dados carregados manualmente");
-                }
-            });
+            Papa.parse(manualFileContent, { header: false, skipEmptyLines: true, complete: (res) => { processMergedData(res.data, []); setStatus("Offline - Dados Carregados Manualmente"); } });
             return;
         }
-
         try {
-            setStatus("A transferir dados pelo Apps Script...");
+            setStatus("A transferir dados de Múltiplas APIs...");
+            const [respContabil, respGeral] = await Promise.all([
+                fetch(API_URL_CONTABIL),
+                fetch(API_URL_GERAL).catch(() => null) 
+            ]);
+            if (!respContabil.ok) throw new Error("Falha na API Contábil.");
+            const jsonContabil = await respContabil.json();
+            const jsonGeral = respGeral && respGeral.ok ? await respGeral.json() : { values: [] };
 
-            const token = sessionStorage.getItem("token_Contabil");
-
-            if (!token) {
-                throw new Error("Token de acesso não encontrado. Faça login novamente.");
-            }
-
-            const url = `${APPS_SCRIPT_URL}?acao=dados&token=${encodeURIComponent(token)}`;
-
-            const resp = await fetch(url);
-            const json = await resp.json();
-
-            if (!json.ok) {
-                const mensagem = json.mensagem || "Falha ao obter dados.";
-                if (/sess[aã]o|expirad|token/i.test(mensagem)) {
-                    clearAuthStorage();
-                    window.location.reload();
-                    return;
-                }
-                throw new Error(mensagem);
-            }
-
-            processMergedData(json.contabil, json.geral);
-
-            setStatus("Online - Dados carregados via Apps Script");
-
-        } catch (error) {
-            console.error(error);
-            setStatus(error.message || "Falha de comunicação. Faça login novamente ou utilize a carga manual.");
-            setLoading(false);
+            processMergedData(jsonContabil.values, jsonGeral.values);
+            setStatus("Online - APIs Integradas com Sucesso");
+        } catch (error) { 
+            setStatus("Falha de Comunicação. Utilize a Carga Manual (CSV)."); 
+            setLoading(false); 
         }
     };
 
-    // Não carregar dados automaticamente no refresh.
-    // A chamada à API agora ocorre apenas pelo botão "SINCRONIZAR APIs".
-
+    useEffect(() => { loadData(); }, []);
 
     const filteredData = useMemo(() => {
         let filtered = rawData.filter(item => {
@@ -1228,7 +1190,7 @@ function Dashboard() {
             const searchDocumentoMatch = !searchDocumento || item.documento.includes(searchDocumento.toUpperCase());
             const searchObsMatch = !searchObs || item.obs.includes(searchObs.toUpperCase());
             const searchObjetoMatch = !searchObjeto || item.objeto.includes(searchObjeto.toUpperCase());
-            const searchGestorTMatch = !searchGestorTabela || item.gestor.includes(searchGestorTabela.toUpperCase()) || item.fiscal.includes(searchGestorTabela.toUpperCase());
+            const searchGestorTMatch = !searchGestorTabela || item.gestor.includes(searchGestorTabela.toUpperCase()) || item.gestor_sub.includes(searchGestorTabela.toUpperCase()) || item.fiscal.includes(searchGestorTabela.toUpperCase()) || item.fiscal_sub.includes(searchGestorTabela.toUpperCase());
             const searchSecLogMatch = !searchSecLogTabela || item.sec_log.includes(searchSecLogTabela.toUpperCase());
 
             let matchNum = true;
@@ -1270,9 +1232,10 @@ function Dashboard() {
         if (sortConfig.key) {
             filtered.sort((a, b) => {
                 let valA = a[sortConfig.key], valB = b[sortConfig.key];
-                if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
+                if (sortConfig.key === 'dia') { valA = a.diaVal; valB = b.diaVal; }
+                else if (sortConfig.key === 'data_inic') { valA = a.dtInicVal; valB = b.dtInicVal; }
                 else if (sortConfig.key === 'data_fim') { valA = a.dtFimVal; valB = b.dtFimVal; }
-                if (valA === null) valA = -Number.MAX_VALUE; if (valB === null) valB = -Number.MAX_VALUE;
+                if (valA === null || valA === undefined) valA = -Number.MAX_VALUE; if (valB === null || valB === undefined) valB = -Number.MAX_VALUE;
                 if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
@@ -1282,9 +1245,13 @@ function Dashboard() {
     }, [rawData, fExistencia, fMovimento, fUg, fFavorecido, fEmpenho, fDocumento, fContrato, fFiscal, fGestor, fFiscalSub, fGestorSub, fSecLog, fCompra, fModalidade, dDiaDe, dDiaAte, dInicDe, dInicAte, dFimDe, dFimAte, fSituacaoTags, searchContratoTabela, searchSituacaoTabela, searchExistenciaTabela, searchMovimentoTabela, searchEmitenteTabela, searchUgNome, searchEmpenho, searchDocumento, searchObs, searchObjeto, searchGestorTabela, searchSecLogTabela, numFilters, dateFilters, fOnlyBloqueado, fOnlyCancelado, sortConfig]);
 
     const totalsMaster = useMemo(() => {
-        let emp = 0, rec = 0, liq = 0, pag = 0, can = 0, blo = 0;
-        filteredData.forEach(r => { emp += r.v_empenhado; rec += r.v_recebido; liq += r.v_liquidado; pag += r.v_pago; can += r.v_cancelado; blo += r.v_bloqueado; });
-        return { emp, rec, liq, pag, can, blo };
+        let emp = 0, rec = 0, liq = 0, aliq = 0, pag = 0, apag = 0, can = 0, blo = 0;
+        filteredData.forEach(r => {
+            emp += r.v_empenhado; rec += r.v_recebido; liq += r.v_liquidado; pag += r.v_pago; can += r.v_cancelado; blo += r.v_bloqueado;
+            aliq += (r.v_a_liquidar !== undefined ? r.v_a_liquidar : Math.max(0, r.v_empenhado - r.v_liquidado - r.v_bloqueado - r.v_cancelado));
+            apag += (r.v_a_pagar !== undefined ? r.v_a_pagar : Math.max(0, r.v_empenhado - r.v_pago - r.v_bloqueado - r.v_cancelado));
+        });
+        return { emp, rec, liq, aliq, pag, apag, can, blo };
     }, [filteredData]);
 
     const countSoGeral = useMemo(() => {
@@ -1328,26 +1295,16 @@ function Dashboard() {
 
     const kpis = useMemo(() => {
         const uniqueContratos = new Set();
-        const gestoresTitulares = new Set();
-        const gestoresSubstitutos = new Set();
-        const fiscaisTitulares = new Set();
-        const fiscaisSubstitutos = new Set();
-        const addPessoaValida = (set, value) => {
-            const val = (value || '').toString().trim();
-            if (val && val !== '-' && val !== 'N/I') set.add(val);
-        };
+        let totalGlobal = 0;
         let qtdAtivos = 0, qtdAtivosInexec = 0, qtdAtivosEmExec = 0, qtdAtivosExecTot = 0, qtdAtivosExecParc = 0;
         let qtdVencidos = 0, qtdVencInexecTot = 0, qtdVencidosTot = 0, qtdVencidosParc = 0;
         let qtdBloqueados = 0, qtdCancelados = 0;
 
         filteredData.forEach(item => {
-            addPessoaValida(gestoresTitulares, item.gestor);
-            addPessoaValida(gestoresSubstitutos, item.gestor_sub);
-            addPessoaValida(fiscaisTitulares, item.fiscal);
-            addPessoaValida(fiscaisSubstitutos, item.fiscal_sub);
             if (item.contrato && item.contrato.trim() !== "" && item.contrato !== "-") {
                 if (!uniqueContratos.has(item.contrato.trim())) {
                     uniqueContratos.add(item.contrato.trim());
+                    totalGlobal += item.v_global || 0;
                     if (item.situacaoFlags && item.situacaoFlags.some(f => f.label === 'CAN')) qtdCancelados++;
                     if (item.situacaoFlags && item.situacaoFlags.some(f => f.label === 'BLOQ')) qtdBloqueados++;
                     
@@ -1368,14 +1325,11 @@ function Dashboard() {
         });
         return {
             qtdContratos: uniqueContratos.size,
-            qtdGestoresTitulares: gestoresTitulares.size,
-            qtdGestoresSubstitutos: gestoresSubstitutos.size,
-            qtdGestores: gestoresTitulares.size + gestoresSubstitutos.size,
-            qtdFiscaisTitulares: fiscaisTitulares.size,
-            qtdFiscaisSubstitutos: fiscaisSubstitutos.size,
-            qtdFiscais: fiscaisTitulares.size + fiscaisSubstitutos.size,
-            qtdFornecedores: new Set(filteredData.map(d => d.favorecido).filter(v => v && v !== '-' && v !== 'N/I')).size,
+            qtdGestores: new Set(filteredData.map(d => d.gestor)).size,
+            qtdFiscais: new Set(filteredData.map(d => d.fiscal)).size,
+            qtdFornecedores: new Set(filteredData.map(d => d.favorecido)).size,
             qtdAtivos, qtdAtivosInexec, qtdAtivosEmExec, qtdAtivosExecTot, qtdAtivosExecParc,
+            totalGlobal,
             qtdVencidos, qtdVencInexecTot, qtdVencidosTot, qtdVencidosParc, qtdBloqueados, qtdCancelados,
             totalEmpenhado: totalsMaster.emp,
             totalRecebido: totalsMaster.rec, percRecebido: totalsMaster.emp ? (totalsMaster.rec / totalsMaster.emp) : 0,
@@ -1539,78 +1493,39 @@ function Dashboard() {
             const empenho = item.empenho || "-";
 
             if (matrixGroupBy === 'contrato') {
-                return {
-                    key: contrato,
-                    sec_log: secLog,
-                    contrato,
-                    compra: item.compra,
-                    modalidade: item.modalidade,
-                    empenho: "VÁRIOS"
-                };
+                return { key: contrato, sec_log: secLog, contrato, compra: item.compra, modalidade: item.modalidade, empenho: "VÁRIOS" };
+            }
+
+            if (matrixGroupBy === 'empenho') {
+                return { key: empenho, sec_log: secLog, contrato: "VÁRIOS", compra: "-", modalidade: "-", empenho };
             }
 
             if (matrixGroupBy === 'sec_log') {
-                return {
-                    key: secLog,
-                    sec_log: secLog,
-                    contrato: "VÁRIOS",
-                    compra: "-",
-                    modalidade: "-",
-                    empenho: "VÁRIOS"
-                };
+                return { key: secLog, sec_log: secLog, contrato: "VÁRIOS", compra: "-", modalidade: "-", empenho: "VÁRIOS" };
             }
 
             if (matrixGroupBy === 'sec_log_contrato_empenho') {
-                return {
-                    key: `${secLog}|${contrato}|${empenho}`,
-                    sec_log: secLog,
-                    contrato,
-                    compra: item.compra,
-                    modalidade: item.modalidade,
-                    empenho
-                };
+                return { key: `${secLog}|${contrato}|${empenho}`, sec_log: secLog, contrato, compra: item.compra, modalidade: item.modalidade, empenho };
             }
 
-            return {
-                key: `${contrato}|${empenho}`,
-                sec_log: secLog,
-                contrato,
-                compra: item.compra,
-                modalidade: item.modalidade,
-                empenho
-            };
+            return { key: `${contrato}|${empenho}`, sec_log: secLog, contrato, compra: item.compra, modalidade: item.modalidade, empenho };
         };
 
         filteredData.forEach(item => {
             if(!item.contrato || item.contrato === "-") return;
-
             const meta = getMatrixGroupMeta(item);
             const key = meta.key;
-
             if(!map[key]) {
                 map[key] = {
-                    sec_log: meta.sec_log,
-                    contrato: meta.contrato,
-                    compra: meta.compra,
-                    modalidade: meta.modalidade,
-                    empenho: meta.empenho,
-                    dtInicVal: item.dtInicVal,
-                    min_ro_val: Infinity,
+                    sec_log: meta.sec_log, contrato: meta.contrato, compra: meta.compra, modalidade: meta.modalidade, empenho: meta.empenho,
+                    dtInicVal: item.dtInicVal, min_ro_val: Infinity,
                     docs_emp: new Set(), docs_rec: new Set(), docs_liq: new Set(), docs_pag: new Set(), docs_bloq: new Set(), docs_can: new Set(),
                     v_emp: 0, v_rec: 0, v_liq: 0, v_pag: 0, v_bloq: 0, v_can: 0
                 };
             }
-
             const m = map[key];
-
-            if (item.dtInicVal && (!m.dtInicVal || item.dtInicVal < m.dtInicVal)) {
-                m.dtInicVal = item.dtInicVal;
-            }
-
-            if (item.documento.includes("RO") && item.diaVal > 0) {
-                if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal;
-            }
-
+            if (item.dtInicVal && (!m.dtInicVal || item.dtInicVal < m.dtInicVal)) m.dtInicVal = item.dtInicVal;
+            if (item.documento.includes("RO") && item.diaVal > 0) { if (item.diaVal < m.min_ro_val) m.min_ro_val = item.diaVal; }
             if (item.has_empenhado) m.docs_emp.add(item.documento);
             if (item.has_recebido) m.docs_rec.add(item.documento);
             if (item.has_liquidado) m.docs_liq.add(item.documento);
@@ -1624,19 +1539,14 @@ function Dashboard() {
 
         let arr = Object.values(map).map(m => {
             let diasAss = null;
-            if (matrixGroupBy !== 'sec_log' && m.min_ro_val !== Infinity && m.dtInicVal) {
-                diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000);
-            }
+            if (matrixGroupBy !== 'sec_log' && m.min_ro_val !== Infinity && m.dtInicVal) { diasAss = Math.floor((m.dtInicVal - m.min_ro_val) / 86400000); }
             let v_saldo_exec = m.v_emp - m.v_liq - m.v_can - m.v_bloq;
+            let v_a_liquidar = Math.max(0, m.v_emp - m.v_liq - m.v_bloq - m.v_can);
+            let v_a_pagar = Math.max(0, m.v_emp - m.v_pag - m.v_bloq - m.v_can);
             return {
-                sec_log: m.sec_log,
-                contrato: m.contrato,
-                compra: m.compra,
-                modalidade: m.modalidade,
-                empenho: m.empenho,
-                diasAss: diasAss,
+                sec_log: m.sec_log, contrato: m.contrato, compra: m.compra, modalidade: m.modalidade, empenho: m.empenho, diasAss: diasAss,
                 qtd_emp: m.docs_emp.size, qtd_rec: m.docs_rec.size, qtd_liq: m.docs_liq.size, qtd_pag: m.docs_pag.size, qtd_bloq: m.docs_bloq.size, qtd_can: m.docs_can.size,
-                v_emp: m.v_emp, v_rec: m.v_rec, v_liq: m.v_liq, v_pag: m.v_pag, v_bloq: m.v_bloq, v_can: m.v_can, v_saldo_exec: v_saldo_exec,
+                v_emp: m.v_emp, v_rec: m.v_rec, v_liq: m.v_liq, v_a_liquidar: v_a_liquidar, v_pag: m.v_pag, v_a_pagar: v_a_pagar, v_bloq: m.v_bloq, v_can: m.v_can, v_saldo_exec: v_saldo_exec,
                 sortVal: m.min_ro_val !== Infinity ? m.min_ro_val : Number.MAX_SAFE_INTEGER
             };
         });
@@ -1657,34 +1567,25 @@ function Dashboard() {
 
     const matrixTotals = useMemo(() => {
         let sumQtdEmp = 0, sumQtdRec = 0, sumQtdLiq = 0, sumQtdPag = 0, sumQtdBloq = 0, sumQtdCan = 0;
-        let sumVEmp = 0, sumVRec = 0, sumVLiq = 0, sumVPag = 0, sumVBloq = 0, sumVCan = 0, sumVSaldoExec = 0;
+        let sumVEmp = 0, sumVRec = 0, sumVLiq = 0, sumVAliq = 0, sumVPag = 0, sumVApag = 0, sumVBloq = 0, sumVCan = 0, sumVSaldoExec = 0;
         let sumDias = 0, countDias = 0;
         matrixData.forEach(row => {
             sumQtdEmp += row.qtd_emp; sumQtdRec += row.qtd_rec; sumQtdLiq += row.qtd_liq; sumQtdPag += row.qtd_pag;
             sumQtdBloq += row.qtd_bloq; sumQtdCan += row.qtd_can;
-            sumVEmp += row.v_emp; sumVRec += row.v_rec; sumVLiq += row.v_liq; sumVPag += row.v_pag;
+            sumVEmp += row.v_emp; sumVRec += row.v_rec; sumVLiq += row.v_liq; sumVAliq += row.v_a_liquidar; sumVPag += row.v_pag; sumVApag += row.v_a_pagar;
             sumVBloq += row.v_bloq; sumVCan += row.v_can; sumVSaldoExec += row.v_saldo_exec;
             if (row.diasAss !== null && row.diasAss >= 0) { sumDias += row.diasAss; countDias++; }
         });
         const mediaDias = countDias > 0 ? (sumDias / countDias).toFixed(1) : '-';
-        return { sumQtdEmp, sumQtdRec, sumQtdLiq, sumQtdPag, sumQtdBloq, sumQtdCan, sumVEmp, sumVRec, sumVLiq, sumVPag, sumVBloq, sumVCan, sumVSaldoExec, mediaDias };
+        return { sumQtdEmp, sumQtdRec, sumQtdLiq, sumQtdPag, sumQtdBloq, sumQtdCan, sumVEmp, sumVRec, sumVLiq, sumVAliq, sumVPag, sumVApag, sumVBloq, sumVCan, sumVSaldoExec, mediaDias };
     }, [matrixData]);
 
-    const matrixUniqueContratos = useMemo(() => {
-        return new Set(filteredData.filter(d => d.contrato && d.contrato !== '-').map(d => d.contrato)).size;
-    }, [filteredData]);
-
-    const matrixUniqueEmpenhos = useMemo(() => {
-        return new Set(filteredData.filter(d => d.empenho && d.empenho !== '-' && d.contrato && d.contrato !== '-').map(d => `${d.contrato}|${d.empenho}`)).size;
-    }, [filteredData]);
-
-    const matrixUniqueSecLogs = useMemo(() => {
-        return new Set(filteredData.filter(d => d.sec_log && d.sec_log !== '-').map(d => d.sec_log)).size;
-    }, [filteredData]);
-
+    const matrixUniqueContratos = useMemo(() => new Set(filteredData.filter(d => d.contrato && d.contrato !== '-').map(d => d.contrato)).size, [filteredData]);
+    const matrixUniqueEmpenhos = useMemo(() => new Set(filteredData.filter(d => d.empenho && d.empenho !== '-' && d.contrato && d.contrato !== '-').map(d => `${d.contrato}|${d.empenho}`)).size, [filteredData]);
+    const matrixUniqueSecLogs = useMemo(() => new Set(filteredData.filter(d => d.sec_log && d.sec_log !== '-').map(d => d.sec_log)).size, [filteredData]);
     const matrixShowsSecLog = matrixGroupBy === 'sec_log' || matrixGroupBy === 'sec_log_contrato_empenho';
-    const matrixShowsContrato = matrixGroupBy !== 'sec_log';
-    const matrixShowsEmpenho = matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
+    const matrixShowsContrato = matrixGroupBy === 'contrato' || matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
+    const matrixShowsEmpenho = matrixGroupBy === 'empenho' || matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
     const matrixLeadingColsCount = (matrixShowsSecLog ? 1 : 0) + (matrixShowsContrato ? 1 : 0) + (matrixShowsEmpenho ? 1 : 0);
 
     const renderMatrixHeader = (label, key, extraClass = "") => {
@@ -1713,14 +1614,16 @@ function Dashboard() {
         if (masterCols.emitente) cols.push({ header: "EMITENTE", key: "ug" });
         if (masterCols.favorecido) cols.push({ header: "FAVORECIDO", key: "favorecido" });
         if (masterCols.objeto) cols.push({ header: "OBJETO", key: "objeto" });
-        if (masterCols.gestor) { cols.push({ header: "GESTOR", key: "gestor" }); cols.push({ header: "FISCAL", key: "fiscal" }); }
+        if (masterCols.gestor) cols.push({ header: "GESTOR/FISCAL", key: "gestor", format: (r) => `G TIT: ${r.gestor || '-'}\nG SUB: ${r.gestor_sub || '-'}\nF TIT: ${r.fiscal || '-'}\nF SUB: ${r.fiscal_sub || '-'}` });
         if (masterCols.empenho) cols.push({ header: "EMPENHO", key: "empenho" });
         if (masterCols.documento) cols.push({ header: "DOCUMENTO", key: "documento" });
         if (masterCols.obs) cols.push({ header: "OBS", key: "obs" });
         if (masterCols.v_emp) cols.push({ header: "EMPENHADO", key: "v_empenhado", isCurrency: true });
         if (masterCols.v_rec) cols.push({ header: "RECEBIDO", key: "v_recebido", isCurrency: true });
         if (masterCols.v_liq) cols.push({ header: "LIQUIDADO", key: "v_liquidado", isCurrency: true });
+        if (masterCols.v_aliq) cols.push({ header: "A LIQUIDAR", key: "v_a_liquidar", isCurrency: true });
         if (masterCols.v_pag) cols.push({ header: "PAGO", key: "v_pago", isCurrency: true });
+        if (masterCols.v_apag) cols.push({ header: "A PAGAR", key: "v_a_pagar", isCurrency: true });
         if (masterCols.v_can) cols.push({ header: "CANCELADO", key: "v_cancelado", isCurrency: true });
         if (masterCols.v_bloq) cols.push({ header: "BLOQUEADO", key: "v_bloqueado", isCurrency: true });
         return cols;
@@ -1735,7 +1638,9 @@ function Dashboard() {
         if (matrixVisibleCols.emp) { cols.push({ header: "QTD DOC EMP", key: "qtd_emp" }); cols.push({ header: "R$ EMPENHADO", key: "v_emp", isCurrency: true }); }
         if (matrixVisibleCols.rec) { cols.push({ header: "QTD DOC REC", key: "qtd_rec" }); cols.push({ header: "R$ RECEBIDO", key: "v_rec", isCurrency: true }); }
         if (matrixVisibleCols.liq) { cols.push({ header: "QTD DOC LIQ", key: "qtd_liq" }); cols.push({ header: "R$ LIQUIDADO", key: "v_liq", isCurrency: true }); }
+        if (matrixVisibleCols.aliq) cols.push({ header: "R$ A LIQUIDAR", key: "v_a_liquidar", isCurrency: true });
         if (matrixVisibleCols.pag) { cols.push({ header: "QTD DOC PAG", key: "qtd_pag" }); cols.push({ header: "R$ PAGO", key: "v_pag", isCurrency: true }); }
+        if (matrixVisibleCols.apag) cols.push({ header: "R$ A PAGAR", key: "v_a_pagar", isCurrency: true });
         if (matrixVisibleCols.bloq) { cols.push({ header: "QTD DOC BLOQ", key: "qtd_bloq" }); cols.push({ header: "R$ BLOQUEADO", key: "v_bloq", isCurrency: true }); }
         if (matrixVisibleCols.can) { cols.push({ header: "QTD DOC CAN", key: "qtd_can" }); cols.push({ header: "R$ CANCELADO", key: "v_can", isCurrency: true }); }
         if (matrixVisibleCols.saldo) cols.push({ header: "R$ SALDO A EXEC", key: "v_saldo_exec", isCurrency: true });
@@ -1755,7 +1660,7 @@ function Dashboard() {
     if (masterCols.emitente) masterColSpanCount++;
     if (masterCols.favorecido) masterColSpanCount++;
     if (masterCols.objeto) masterColSpanCount++;
-    if (masterCols.gestor) masterColSpanCount += 2;
+    if (masterCols.gestor) masterColSpanCount++;
     if (masterCols.empenho) masterColSpanCount++;
     if (masterCols.documento) masterColSpanCount++;
     if (masterCols.obs) masterColSpanCount++;
@@ -1780,7 +1685,7 @@ function Dashboard() {
                     <input type="file" accept=".csv" onChange={(e) => { const r = new FileReader(); r.onload = (ev) => loadData(ev.target.result); r.readAsText(e.target.files[0]); }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
                     <div className="w-[1px] h-6 bg-slate-300 mx-1 hidden sm:block"></div>
                     <button onClick={() => loadData()} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition">SINCRONIZAR APIs</button>
-                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span>{currentPerfil && <span className="text-slate-400"> ({currentPerfil})</span>}</span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span></span>
                     <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition ml-2">SAIR</button>
                 </div>
             </header>
@@ -1793,8 +1698,6 @@ function Dashboard() {
                     <div className="flex flex-wrap items-center gap-2">
                         <button onClick={toggleCSup} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isCSupActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>C SUP</button>
                         <button onClick={toggleContratosVigentes} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContratosVigentesActive ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTRATOS VIGENTES</button>
-                        <button onClick={toggleContrVencendo7Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContrVencendo7DiasActive ? 'bg-teal-600 text-white border-teal-600 ring-2 ring-teal-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTR VENCENDO EM 7 DIAS</button>
-                        <button onClick={toggleContrVencendo30Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContrVencendo30DiasActive ? 'bg-teal-600 text-white border-teal-600 ring-2 ring-teal-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTR VENCENDO EM 30 DIAS</button>
                         <button onClick={toggleContr7Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContr7DiasActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTR 7 DIAS ATRÁS</button>
                         <button onClick={toggleContr30Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isContr30DiasActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>CONTR 30 DIAS ATRÁS</button>
                         <button onClick={toggleDoc7Dias} className={`text-[9px] font-bold uppercase px-3 py-1.5 rounded transition shadow-sm border ${isDoc7DiasActive ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-400 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>DOC 7 DIAS ATRÁS</button>
@@ -1873,13 +1776,14 @@ function Dashboard() {
                     <KPICard title="QTD Vencidos" value={kpis.qtdVencidos} extraText={`Inexec Tot: ${kpis.qtdVencInexecTot}\nExec Tot: ${kpis.qtdVencidosTot}\nExec Parc: ${kpis.qtdVencidosParc}`} color="slate" isCurrency={false} />
                     <KPICard title="QTD Bloqueados" value={kpis.qtdBloqueados} color="orange" isCurrency={false} />
                     <KPICard title="QTD Cancelados" value={kpis.qtdCancelados} color="red" isCurrency={false} />
-                    <KPICard title="QTD Gestores" value={kpis.qtdGestores} extraText={`Titular: ${kpis.qtdGestoresTitulares}\nSubstituto: ${kpis.qtdGestoresSubstitutos}`} color="amber" isCurrency={false} />
-                    <KPICard title="QTD Fiscais" value={kpis.qtdFiscais} extraText={`Titular: ${kpis.qtdFiscaisTitulares}\nSubstituto: ${kpis.qtdFiscaisSubstitutos}`} color="emerald" isCurrency={false} />
+                    <KPICard title="QTD Gestores" value={kpis.qtdGestores} color="amber" isCurrency={false} />
+                    <KPICard title="QTD Fiscais" value={kpis.qtdFiscais} color="emerald" isCurrency={false} />
                     <KPICard title="QTD Fornecedores" value={kpis.qtdFornecedores} color="violet" isCurrency={false} />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
-                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
+                    <KPICard title="Global" value={kpis.totalGlobal || 0} color="slate" isCurrency={true} />
+                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} diffText={`Dif (Glob-Emp): ${formatBRL((kpis.totalGlobal || 0) - kpis.totalEmpenhado)}`} subValue={kpis.totalGlobal ? (kpis.totalEmpenhado / kpis.totalGlobal) : 0} percSuffix=" do Global" color="blue" isCurrency={true} />
                     <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif: ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Emp." color="violet" isCurrency={true} />
                     <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif: ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Emp." color="amber" isCurrency={true} />
                     <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif: ${formatBRL(kpis.totalLiquidado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Emp." color="emerald" isCurrency={true} />
@@ -1955,14 +1859,15 @@ function Dashboard() {
                     <div className="xl:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                         <div className="bg-slate-800 px-4 py-3 flex justify-between items-center flex-wrap gap-2">
                             <h3 className="text-white text-xs font-black tracking-widest uppercase">
-                                MATRIZ QTD DE DOCUMENTOS POR EMPENHO ({Math.min(matrixLimit, matrixData.length)} de {matrixData.length} — {matrixShowsSecLog ? `${matrixUniqueSecLogs} SEC LOG | ` : ""}{matrixUniqueContratos} Contratos | {matrixUniqueEmpenhos} Empenhos)
+                                MATRIZ QTD DE DOCUMENTOS POR EMPENHO ({Math.min(matrixLimit, matrixData.length)} de {matrixData.length} — {matrixUniqueSecLogs} SEC LOG | {matrixUniqueContratos} Contratos | {matrixUniqueEmpenhos} Empenhos)
                             </h3>
                             <div className="flex gap-2 items-center">
                                 <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[9px] font-bold border border-slate-600 rounded px-2 py-1 outline-none shadow-sm text-white bg-slate-700">
-                                    <option value="contrato_empenho">Por Contrato e Empenho</option>
-                                    <option value="contrato">Apenas por Contrato</option>
-                                    <option value="sec_log">Apenas por SEC LOG</option>
-                                    <option value="sec_log_contrato_empenho">Por SEC LOG, Contrato e Empenho</option>
+                                    <option value="contrato">Por Contrato</option>
+                                    <option value="empenho">Por Empenho</option>
+                                    <option value="sec_log">Por Sec Log</option>
+                                    <option value="contrato_empenho">Por Contrato-Empenho</option>
+                                    <option value="sec_log_contrato_empenho">Por Sec Log-Contrato-Empenho</option>
                                 </select>
                                 <div className="relative">
                                     <button onClick={() => setShowMatrixCols(!showMatrixCols)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
@@ -1973,7 +1878,7 @@ function Dashboard() {
                                             {Object.keys(matrixVisibleCols).map(k => (
                                                 <label key={k} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
                                                     <input type="checkbox" checked={matrixVisibleCols[k]} onChange={() => setMatrixVisibleCols(p => ({...p, [k]: !p[k]}))} />
-                                                    {k === 'emp' ? 'EMPENHADO' : k === 'rec' ? 'RECEBIDO' : k === 'liq' ? 'LIQUIDADO' : k === 'pag' ? 'PAGO' : k === 'bloq' ? 'BLOQUEADO' : k === 'can' ? 'CANCELADO' : 'SALDO A EXEC'}
+                                                    {k === 'emp' ? 'EMPENHADO' : k === 'rec' ? 'RECEBIDO' : k === 'liq' ? 'LIQUIDADO' : k === 'aliq' ? 'A LIQUIDAR' : k === 'pag' ? 'PAGO' : k === 'apag' ? 'A PAGAR' : k === 'bloq' ? 'BLOQUEADO' : k === 'can' ? 'CANCELADO' : 'SALDO A EXEC'}
                                                 </label>
                                             ))}
                                         </div>
@@ -2000,7 +1905,9 @@ function Dashboard() {
                                         {matrixVisibleCols.emp && <>{renderMatrixHeader('QTD DOC EMP', 'qtd_emp', 'text-blue-700')} {renderMatrixHeader('R$ EMPENHADO', 'v_emp', 'text-blue-700 text-right')}</>}
                                         {matrixVisibleCols.rec && <>{renderMatrixHeader('QTD DOC REC', 'qtd_rec', 'text-violet-700')} {renderMatrixHeader('R$ RECEBIDO', 'v_rec', 'text-violet-700 text-right')}</>}
                                         {matrixVisibleCols.liq && <>{renderMatrixHeader('QTD DOC LIQ', 'qtd_liq', 'text-amber-700')} {renderMatrixHeader('R$ LIQUIDADO', 'v_liq', 'text-amber-700 text-right')}</>}
+                                        {matrixVisibleCols.aliq && renderMatrixHeader('R$ A LIQUIDAR', 'v_a_liquidar', 'text-slate-700 text-right')}
                                         {matrixVisibleCols.pag && <>{renderMatrixHeader('QTD DOC PAG', 'qtd_pag', 'text-emerald-700')} {renderMatrixHeader('R$ PAGO', 'v_pag', 'text-emerald-700 text-right')}</>}
+                                        {matrixVisibleCols.apag && renderMatrixHeader('R$ A PAGAR', 'v_a_pagar', 'text-slate-700 text-right')}
                                         {matrixVisibleCols.bloq && <>{renderMatrixHeader('QTD DOC BLOQ', 'qtd_bloq', 'text-orange-700')} {renderMatrixHeader('R$ BLOQUEADO', 'v_bloq', 'text-orange-700 text-right')}</>}
                                         {matrixVisibleCols.can && <>{renderMatrixHeader('QTD DOC CAN', 'qtd_can', 'text-red-700')} {renderMatrixHeader('R$ CANCELADO', 'v_can', 'text-red-700 text-right')}</>}
                                         {matrixVisibleCols.saldo && renderMatrixHeader('R$ SALDO A EXEC', 'v_saldo_exec', 'text-teal-700 text-right')}
@@ -2022,7 +1929,9 @@ function Dashboard() {
                                             {matrixVisibleCols.emp && <><td className="p-3 text-center font-bold text-blue-600 bg-blue-50/30">{row.qtd_emp}</td><td className="p-3 text-right font-black text-blue-700 bg-blue-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_emp} /></td></>}
                                             {matrixVisibleCols.rec && <><td className="p-3 text-center font-bold text-violet-600 bg-violet-50/30">{row.qtd_rec}</td><td className="p-3 text-right font-black text-violet-700 bg-violet-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_rec} /></td></>}
                                             {matrixVisibleCols.liq && <><td className="p-3 text-center font-bold text-amber-600 bg-amber-50/30">{row.qtd_liq}</td><td className="p-3 text-right font-black text-amber-700 bg-amber-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_liq} /></td></>}
+                                            {matrixVisibleCols.aliq && <td className="p-3 text-right font-black text-slate-700 bg-slate-50/60 whitespace-nowrap"><FormatNegativeValue val={row.v_a_liquidar} /></td>}
                                             {matrixVisibleCols.pag && <><td className="p-3 text-center font-bold text-emerald-600 bg-emerald-50/30">{row.qtd_pag}</td><td className="p-3 text-right font-black text-emerald-700 bg-emerald-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_pag} /></td></>}
+                                            {matrixVisibleCols.apag && <td className="p-3 text-right font-black text-slate-700 bg-slate-50/60 whitespace-nowrap"><FormatNegativeValue val={row.v_a_pagar} /></td>}
                                             {matrixVisibleCols.bloq && <><td className="p-3 text-center font-bold text-orange-600 bg-orange-50/30">{row.qtd_bloq}</td><td className="p-3 text-right font-black text-orange-700 bg-orange-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_bloq} /></td></>}
                                             {matrixVisibleCols.can && <><td className="p-3 text-center font-bold text-red-600 bg-red-50/30">{row.qtd_can}</td><td className="p-3 text-right font-black text-red-700 bg-red-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_can} /></td></>}
                                             {matrixVisibleCols.saldo && <td className="p-3 text-right font-black text-teal-700 bg-teal-50/30 whitespace-nowrap"><FormatNegativeValue val={row.v_saldo_exec} /></td>}
@@ -2042,7 +1951,9 @@ function Dashboard() {
                                         {matrixVisibleCols.emp && <><td className="p-3 text-center text-blue-800">{matrixTotals.sumQtdEmp}</td><td className="p-3 text-right text-blue-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVEmp}/></td></>}
                                         {matrixVisibleCols.rec && <><td className="p-3 text-center text-violet-800">{matrixTotals.sumQtdRec}</td><td className="p-3 text-right text-violet-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVRec}/></td></>}
                                         {matrixVisibleCols.liq && <><td className="p-3 text-center text-amber-800">{matrixTotals.sumQtdLiq}</td><td className="p-3 text-right text-amber-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVLiq}/></td></>}
+                                        {matrixVisibleCols.aliq && <td className="p-3 text-right text-slate-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVAliq}/></td>}
                                         {matrixVisibleCols.pag && <><td className="p-3 text-center text-emerald-800">{matrixTotals.sumQtdPag}</td><td className="p-3 text-right text-emerald-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVPag}/></td></>}
+                                        {matrixVisibleCols.apag && <td className="p-3 text-right text-slate-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVApag}/></td>}
                                         {matrixVisibleCols.bloq && <><td className="p-3 text-center text-orange-800">{matrixTotals.sumQtdBloq}</td><td className="p-3 text-right text-orange-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVBloq}/></td></>}
                                         {matrixVisibleCols.can && <><td className="p-3 text-center text-red-800">{matrixTotals.sumQtdCan}</td><td className="p-3 text-right text-red-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVCan}/></td></>}
                                         {matrixVisibleCols.saldo && <td className="p-3 text-right text-teal-800 whitespace-nowrap"><FormatNegativeValue val={matrixTotals.sumVSaldoExec}/></td>}
@@ -2094,7 +2005,9 @@ function Dashboard() {
                                 { label: 'Empenhado', data: top20DataProcessed.map(d => d.empenhado), backgroundColor: '#3b82f6', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'Recebido', data: top20DataProcessed.map(d => d.recebido), backgroundColor: '#8b5cf6', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'Liquidado', data: top20DataProcessed.map(d => d.liquidado), backgroundColor: '#f59e0b', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
+                                { label: 'A Liquidar', data: top20DataProcessed.map(d => Math.max(0, d.empenhado - d.liquidado - d.bloqueado - d.cancelado)), backgroundColor: '#cbd5e1', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#1e293b', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'Pago', data: top20DataProcessed.map(d => d.pago), backgroundColor: '#10b981', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
+                                { label: 'A Pagar', data: top20DataProcessed.map(d => Math.max(0, d.empenhado - d.pago - d.bloqueado - d.cancelado)), backgroundColor: '#64748b', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'QTD Contratos', data: top20DataProcessed.map(d => d.count), backgroundColor: '#ec4899', borderColor: '#ec4899', yAxisID: 'y1', type: 'line', borderWidth: 2, pointRadius: 4, order: 1, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#1e293b', rotation: -90, align: 'bottom', anchor: 'start', font: { size: 9, weight: 'bold' } } }
                             ]
                         }} options={{
@@ -2163,10 +2076,10 @@ function Dashboard() {
                         <ChartComponent id="gTop20100Contabil" type="bar" data={{
                             labels: top20100DataProcessed.map(d => formatLabelMultiLine(d.label)),
                             datasets: [
-                                { label: 'Liquidado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.liquidado / d.empenhado) * 100 : 0), backgroundColor: '#f59e0b', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].liquidado) } },
-                                { label: 'A Liquidar %', data: top20100DataProcessed.map(d => d.empenhado ? Math.max(0, ((d.empenhado - d.liquidado - d.bloqueado - d.cancelado) / d.empenhado) * 100) : 0), backgroundColor: '#cbd5e1', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#1e293b', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(Math.max(0, top20100DataProcessed[ctx.dataIndex].empenhado - top20100DataProcessed[ctx.dataIndex].liquidado - top20100DataProcessed[ctx.dataIndex].bloqueado - top20100DataProcessed[ctx.dataIndex].cancelado)) } },
-                                { label: 'Bloqueado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.bloqueado / d.empenhado) * 100 : 0), backgroundColor: '#f97316', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].bloqueado) } },
-                                { label: 'Cancelado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.cancelado / d.empenhado) * 100 : 0), backgroundColor: '#ef4444', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].cancelado) } },
+                                { label: 'Liquidado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.liquidado / d.empenhado) * 100 : 0), backgroundColor: '#f59e0b', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: v => v.toFixed(1).replace('.', ',') + '%'  } },
+                                { label: 'A Liquidar %', data: top20100DataProcessed.map(d => d.empenhado ? Math.max(0, ((d.empenhado - d.liquidado - d.bloqueado - d.cancelado) / d.empenhado) * 100) : 0), backgroundColor: '#cbd5e1', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#1e293b', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: v => v.toFixed(1).replace('.', ',') + '%'  } },
+                                { label: 'Bloqueado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.bloqueado / d.empenhado) * 100 : 0), backgroundColor: '#f97316', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: v => v.toFixed(1).replace('.', ',') + '%'  } },
+                                { label: 'Cancelado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.cancelado / d.empenhado) * 100 : 0), backgroundColor: '#ef4444', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: v => v.toFixed(1).replace('.', ',') + '%'  } },
                                 
                                 { label: 'Empenhado (100%)', data: top20100DataProcessed.map(d => 100), backgroundColor: 'transparent', borderColor: '#3b82f6', borderWidth: 2, xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '2', order: 3, datalabels: { display: false } },
                                 
@@ -2313,7 +2226,7 @@ function Dashboard() {
                                         {Object.keys(masterCols).map(k => (
                                             <label key={k} className="flex items-center gap-2 text-[10px] font-bold text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
                                                 <input type="checkbox" checked={masterCols[k]} onChange={() => setMasterCols(p => ({...p, [k]: !p[k]}))} />
-                                                {k.toUpperCase().replace('_', ' ')}
+                                                {{ v_emp: 'EMPENHADO', v_rec: 'RECEBIDO', v_liq: 'LIQUIDADO', v_aliq: 'A LIQUIDAR', v_pag: 'PAGO', v_apag: 'A PAGAR', v_can: 'CANCELADO', v_bloq: 'BLOQUEADO', gestor: 'GESTOR/FISCAL' }[k] || k.toUpperCase().replace('_', ' ')}
                                             </label>
                                         ))}
                                     </div>
@@ -2326,7 +2239,7 @@ function Dashboard() {
                         </div>
                     </div>
                     <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
-                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: '2700px' }}>
+                        <table className="text-left text-[9px] border-collapse relative" style={{ tableLayout: 'fixed', width: '100%', minWidth: '3000px' }}>
                             <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 shadow-sm z-10">
                                 <tr className="text-slate-600 uppercase font-black tracking-tighter align-top">
                                     {masterCols.dia && <DateFilterHeader widthClass="w-[5%]" label="DIA" field="dia" current={sortConfig} onSort={handleSort} dateFilters={dateFilters} setDateFilters={setDateFilters} />}
@@ -2341,14 +2254,16 @@ function Dashboard() {
                                     {masterCols.emitente && <TextHeader widthClass="w-[6%]" label="EMITENTE" field="ug" current={sortConfig} onSort={handleSort} searchVal={searchEmitenteTabela} onSearchChange={setSearchEmitenteTabela} />}
                                     {masterCols.favorecido && <TextHeader widthClass="w-[12%]" label="FAVORECIDO" field="favorecido" current={sortConfig} onSort={handleSort} searchVal={searchUgNome} onSearchChange={setSearchUgNome} />}
                                     {masterCols.objeto && <TextHeader widthClass="w-[10%]" label="OBJETO" field="objeto" current={sortConfig} onSort={handleSort} searchVal={searchObjeto} onSearchChange={setSearchObjeto} />}
-                                    {masterCols.gestor && <TextHeader widthClass="w-[7%]" label="GESTOR/FISCAL" field="gestor" current={sortConfig} onSort={handleSort} searchVal={searchGestorTabela} onSearchChange={setSearchGestorTabela} />}
+                                    {masterCols.gestor && <TextHeader widthClass="w-[10%]" label="GESTOR/FISCAL" field="gestor" current={sortConfig} onSort={handleSort} searchVal={searchGestorTabela} onSearchChange={setSearchGestorTabela} />}
                                     {masterCols.empenho && <TextHeader widthClass="w-[8%]" label="EMPENHO" field="empenho" current={sortConfig} onSort={handleSort} searchVal={searchEmpenho} onSearchChange={setSearchEmpenho} />}
                                     {masterCols.documento && <TextHeader widthClass="w-[8%]" label="DOCUMENTO" field="documento" current={sortConfig} onSort={handleSort} searchVal={searchDocumento} onSearchChange={setSearchDocumento} />}
                                     {masterCols.obs && <TextHeader widthClass="w-[12%]" label="OBS" field="obs" current={sortConfig} onSort={handleSort} searchVal={searchObs} onSearchChange={setSearchObs} />}
                                     {masterCols.v_emp && <NumericHeader widthClass="w-[6%]" label="EMPENHADO" field="v_empenhado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                     {masterCols.v_rec && <NumericHeader widthClass="w-[6%]" label="RECEBIDO" field="v_recebido" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                     {masterCols.v_liq && <NumericHeader widthClass="w-[6%]" label="LIQUIDADO" field="v_liquidado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_aliq && <NumericHeader widthClass="w-[6%]" label="A LIQUIDAR" field="v_a_liquidar" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                     {masterCols.v_pag && <NumericHeader widthClass="w-[6%]" label="PAGO" field="v_pago" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
+                                    {masterCols.v_apag && <NumericHeader widthClass="w-[6%]" label="A PAGAR" field="v_a_pagar" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                     {masterCols.v_can && <NumericHeader widthClass="w-[6%]" label="CANCELADO" field="v_cancelado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                     {masterCols.v_bloq && <NumericHeader widthClass="w-[6%]" label="BLOQUEADO" field="v_bloqueado" current={sortConfig} onSort={handleSort} numFilters={numFilters} setNumFilters={setNumFilters} align="right" />}
                                 </tr>
@@ -2419,9 +2334,13 @@ function Dashboard() {
                                         {masterCols.favorecido && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words leading-tight">{row.favorecido}</td>}
                                         {masterCols.objeto && <td className="p-2 text-slate-500 whitespace-normal break-words leading-tight">{row.objeto}</td>}
                                         {masterCols.gestor && (
-                                            <td className="p-2 whitespace-normal break-words">
-                                                <div className="font-bold text-slate-700" title="Gestor">G: {row.gestor}</div>
-                                                <div className="font-bold text-slate-700 mt-1" title="Fiscal">F: {row.fiscal}</div>
+                                            <td className="p-2 whitespace-normal break-words align-top">
+                                                <div className="space-y-1 leading-tight">
+                                                    <div><span className="inline-block min-w-[42px] text-[8px] font-black text-blue-700 bg-blue-50 border border-blue-100 rounded px-1 mr-1">G TIT</span><span className="font-bold text-slate-700">{row.gestor || '-'}</span></div>
+                                                    <div><span className="inline-block min-w-[42px] text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-100 rounded px-1 mr-1">G SUB</span><span className="font-bold text-slate-500">{row.gestor_sub || '-'}</span></div>
+                                                    <div><span className="inline-block min-w-[42px] text-[8px] font-black text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-1 mr-1">F TIT</span><span className="font-bold text-slate-700">{row.fiscal || '-'}</span></div>
+                                                    <div><span className="inline-block min-w-[42px] text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 rounded px-1 mr-1">F SUB</span><span className="font-bold text-slate-500">{row.fiscal_sub || '-'}</span></div>
+                                                </div>
                                             </td>
                                         )}
                                         {masterCols.empenho && <td className="p-2 text-slate-600 font-bold whitespace-normal break-words">{row.empenho}</td>}
@@ -2431,7 +2350,9 @@ function Dashboard() {
                                         {masterCols.v_emp && <td className="p-2 text-right font-bold text-blue-700 whitespace-normal break-words bg-blue-50/30"><FormatNegativeValue val={row.v_empenhado} /></td>}
                                         {masterCols.v_rec && <td className="p-2 text-right font-bold text-violet-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_recebido} /></td>}
                                         {masterCols.v_liq && <td className="p-2 text-right font-bold text-amber-600 whitespace-normal break-words bg-amber-50/30"><FormatNegativeValue val={row.v_liquidado} /></td>}
+                                        {masterCols.v_aliq && <td className="p-2 text-right font-bold text-slate-600 whitespace-normal break-words bg-slate-50/50"><FormatNegativeValue val={row.v_a_liquidar !== undefined ? row.v_a_liquidar : Math.max(0, row.v_empenhado - row.v_liquidado - row.v_bloqueado - row.v_cancelado)} /></td>}
                                         {masterCols.v_pag && <td className="p-2 text-right font-black text-emerald-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_pago} /></td>}
+                                        {masterCols.v_apag && <td className="p-2 text-right font-bold text-slate-700 whitespace-normal break-words bg-slate-50/50"><FormatNegativeValue val={row.v_a_pagar !== undefined ? row.v_a_pagar : Math.max(0, row.v_empenhado - row.v_pago - row.v_bloqueado - row.v_cancelado)} /></td>}
                                         {masterCols.v_can && <td className="p-2 text-right font-bold text-red-600 whitespace-normal break-words bg-red-50/30"><FormatNegativeValue val={row.v_cancelado} /></td>}
                                         {masterCols.v_bloq && <td className="p-2 text-right font-bold text-orange-600 whitespace-normal break-words"><FormatNegativeValue val={row.v_bloqueado} /></td>}
                                     </tr>
@@ -2443,7 +2364,9 @@ function Dashboard() {
                                     {masterCols.v_emp && <td className="p-2 text-right text-blue-800"><FormatNegativeValue val={totalsMaster.emp}/></td>}
                                     {masterCols.v_rec && <td className="p-2 text-right text-violet-800"><FormatNegativeValue val={totalsMaster.rec}/></td>}
                                     {masterCols.v_liq && <td className="p-2 text-right text-amber-800"><FormatNegativeValue val={totalsMaster.liq}/></td>}
+                                    {masterCols.v_aliq && <td className="p-2 text-right text-slate-800"><FormatNegativeValue val={totalsMaster.aliq}/></td>}
                                     {masterCols.v_pag && <td className="p-2 text-right text-emerald-800"><FormatNegativeValue val={totalsMaster.pag}/></td>}
+                                    {masterCols.v_apag && <td className="p-2 text-right text-slate-800"><FormatNegativeValue val={totalsMaster.apag}/></td>}
                                     {masterCols.v_can && <td className="p-2 text-right text-red-800"><FormatNegativeValue val={totalsMaster.can}/></td>}
                                     {masterCols.v_bloq && <td className="p-2 text-right text-orange-800"><FormatNegativeValue val={totalsMaster.blo}/></td>}
                                 </tr>
@@ -2480,10 +2403,7 @@ class ErrorBoundary extends React.Component {
             <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-8">
                 <h2 className="text-2xl font-black text-red-600 mb-4 uppercase tracking-tighter">Erro Detetado no Painel Contábil</h2>
                 <p className="text-slate-700 mb-6 font-bold bg-white p-4 rounded shadow-sm border border-red-200">{this.state.error.toString()}</p>
-                <button onClick={() => {
-                    clearAuthStorage();
-                    window.location.reload();
-                }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
+                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
             </div>
         );
         return this.props.children; 
@@ -2491,157 +2411,55 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(() => isAuthSessionValid());
-
+    const [isAuthenticated, setIsAuthenticated] = useState(() => { try { return localStorage.getItem('isAuth_Contabil') === 'true'; } catch(e) { return false; } });
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
-    const [isLogging, setIsLogging] = useState(false);
 
-    useEffect(() => {
-        if (!isAuthenticated) return;
-
-        const expira = Number(sessionStorage.getItem('expira_Contabil') || 0);
-        if (!expira) return;
-
-        const ms = expira - Date.now();
-        if (ms <= 0) {
-            clearAuthStorage();
-            setIsAuthenticated(false);
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            clearAuthStorage();
-            setIsAuthenticated(false);
-            setError("Sessão expirada. Faça login novamente.");
-        }, Math.min(ms, 2147483647));
-
-        return () => clearTimeout(timer);
-    }, [isAuthenticated]);
-
-    const handleLogin = async (e) => {
+    const handleLogin = (e) => {
         e.preventDefault();
-        setError("");
-        setIsLogging(true);
+        const users = {};
+        users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
+        users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
+        users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
+        users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
+        users[_decode("01100010 01101111 01110101 01101100 01100101 01110111 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
 
-        try {
-            const body = new URLSearchParams();
-            body.append("acao", "login");
-            body.append("usuario", username);
-            body.append("senha", password);
-
-            const resp = await fetch(APPS_SCRIPT_URL, {
-                method: "POST",
-                body: body
-            });
-
-            const json = await resp.json();
-
-            if (!json.ok) {
-                setError(json.mensagem || "Credenciais inválidas.");
-                setIsLogging(false);
-                return;
-            }
-
-            sessionStorage.setItem("token_Contabil", json.token);
-            sessionStorage.setItem("user_Contabil", json.usuario.nome || username);
-            sessionStorage.setItem("perfil_Contabil", json.usuario.perfil || "");
-            sessionStorage.setItem("ativo_Contabil", json.usuario.ativo || "");
-            sessionStorage.setItem("validade_Contabil", json.usuario.validade || "");
-            sessionStorage.setItem("duracao_diaria_horas_Contabil", json.usuario.duracao_diaria_horas || "");
-
-            if (json.usuario.expira_em) {
-                sessionStorage.setItem("expira_Contabil", String(json.usuario.expira_em));
-            } else {
-                sessionStorage.removeItem("expira_Contabil");
-            }
-
+        const inputUser = username.toLowerCase().trim();
+        if (users[inputUser] && users[inputUser] === password) {
             setIsAuthenticated(true);
-            setIsLogging(false);
-
-        } catch (erro) {
-            console.error(erro);
-            setError("Falha ao tentar fazer login. Verifique a conexão ou a publicação do Apps Script.");
-            setIsLogging(false);
+            try { localStorage.setItem('isAuth_Contabil', 'true'); localStorage.setItem('user_Contabil', inputUser); } catch(e) {}
+            setError("");
+        } else {
+            setError("Credenciais inválidas. Verifique o usuário e a senha.");
         }
     };
 
     if (!isAuthenticated) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-800 relative overflow-hidden">
-                <div
-                    className="absolute inset-0 opacity-10 pointer-events-none"
-                    style={{
-                        backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)',
-                        backgroundSize: '20px 20px'
-                    }}
-                ></div>
-
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
                 <div className="bg-white p-8 rounded-2xl shadow-2xl w-[400px] max-w-[90%] border-t-8 border-blue-600 relative z-10">
                     <div className="text-center mb-8">
-                        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">
-                            Acesso Restrito
-                        </h1>
-                        <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">
-                            Painel de Documentos Contábeis
-                        </p>
+                        <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-tight">Acesso Restrito</h1>
+                        <p className="text-xs font-bold text-slate-500 mt-2 uppercase tracking-widest">Painel de Documentos Contábeis</p>
                     </div>
-
                     <form onSubmit={handleLogin} className="space-y-5">
                         <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
-                                Usuário
-                            </label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={e => setUsername(e.target.value)}
-                                className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all"
-                                placeholder="Digite o seu usuário..."
-                                autoComplete="username"
-                            />
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
+                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="Digite o seu usuário..." />
                         </div>
-
                         <div>
-                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">
-                                Senha
-                            </label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all"
-                                placeholder="••••••••"
-                                autoComplete="current-password"
-                            />
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="••••••••" />
                         </div>
-
-                        {error && (
-                            <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
-                                <p className="text-[11px] font-bold text-red-600 text-center">
-                                    {error}
-                                </p>
-                            </div>
-                        )}
-
-                        <button
-                            type="submit"
-                            disabled={isLogging}
-                            className={`w-full text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2 ${
-                                isLogging
-                                    ? "bg-slate-400 cursor-wait"
-                                    : "bg-slate-800 hover:bg-slate-900"
-                            }`}
-                        >
-                            {isLogging ? "Autenticando..." : "Autenticar Acesso"}
-                        </button>
+                        {error && (<div className="bg-red-50 border-l-4 border-red-500 p-3 rounded"><p className="text-[11px] font-bold text-red-600 text-center">{error}</p></div>)}
+                        <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2">Autenticar Acesso</button>
                     </form>
                 </div>
             </div>
         );
     }
-
     return <ErrorBoundary><Dashboard /></ErrorBoundary>;
 }
 
