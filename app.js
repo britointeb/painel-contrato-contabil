@@ -809,6 +809,8 @@ function Dashboard() {
 
     const [areaAggLevel, setAreaAggLevel] = useState('mes');
     const [barAggLevel, setBarAggLevel] = useState('mes');
+    const [areaXAxisMode, setAreaXAxisMode] = useState('nao_normalizada');
+    const [barXAxisMode, setBarXAxisMode] = useState('nao_normalizada');
 
     const [matrixGroupBy, setMatrixGroupBy] = useState('contrato_empenho');
     const [matrixSort, setMatrixSort] = useState({ key: 'sortVal', direction: 'asc' });
@@ -1450,7 +1452,7 @@ function Dashboard() {
     const top20DataProcessed = useMemo(() => processTop20Data(top20ViewMode, top20Sort), [filteredData, top20ViewMode, top20Sort, contratoAnoOrigem]);
     const top20100DataProcessed = useMemo(() => processTop20Data(top20100ViewMode, top20100Sort), [filteredData, top20100ViewMode, top20100Sort, contratoAnoOrigem]);
 
-    const calculateAggregatedData = (aggLevel) => {
+    const calculateAggregatedData = (aggLevel, normalizeXAxis = false) => {
         const sortedData = [...filteredData].sort((a, b) => a.diaVal - b.diaVal);
         const buckets = {}; const keys = []; let max_val = 1;
 
@@ -1484,6 +1486,47 @@ function Dashboard() {
             if (item.v_bloqueado !== 0 && buckets[key].docs_blo.length < 15) buckets[key].docs_blo.push(`C: ${item.contrato} | Doc: ${item.documento} (${formatBRL(item.v_bloqueado)})`);
         });
 
+        if (normalizeXAxis) {
+            const validRows = sortedData.filter(item => item.diaVal);
+            if (validRows.length > 0) {
+                const min = new Date(validRows[0].diaVal);
+                const max = new Date(validRows[validRows.length - 1].diaVal);
+                min.setHours(0, 0, 0, 0);
+                max.setHours(0, 0, 0, 0);
+                const normalizedKeys = [];
+
+                if (aggLevel === 'dia') {
+                    const cur = new Date(min);
+                    while (cur <= max) {
+                        const key = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}-${String(cur.getDate()).padStart(2,'0')}`;
+                        const label = `${String(cur.getDate()).padStart(2,'0')}/${String(cur.getMonth()+1).padStart(2,'0')}/${cur.getFullYear()}`;
+                        if (!buckets[key]) buckets[key] = { label, inc_emp: 0, inc_rec: 0, inc_liq: 0, inc_pag: 0, inc_can: 0, inc_blo: 0, docs_emp: [], docs_rec: [], docs_liq: [], docs_pag: [], docs_can: [], docs_blo: [] };
+                        normalizedKeys.push(key);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                } else if (aggLevel === 'mes') {
+                    const cur = new Date(min.getFullYear(), min.getMonth(), 1);
+                    const end = new Date(max.getFullYear(), max.getMonth(), 1);
+                    while (cur <= end) {
+                        const key = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`;
+                        const label = `${String(cur.getMonth()+1).padStart(2,'0')}/${cur.getFullYear()}`;
+                        if (!buckets[key]) buckets[key] = { label, inc_emp: 0, inc_rec: 0, inc_liq: 0, inc_pag: 0, inc_can: 0, inc_blo: 0, docs_emp: [], docs_rec: [], docs_liq: [], docs_pag: [], docs_can: [], docs_blo: [] };
+                        normalizedKeys.push(key);
+                        cur.setMonth(cur.getMonth() + 1);
+                    }
+                } else {
+                    for (let y = min.getFullYear(); y <= max.getFullYear(); y++) {
+                        const key = `${y}`;
+                        if (!buckets[key]) buckets[key] = { label: key, inc_emp: 0, inc_rec: 0, inc_liq: 0, inc_pag: 0, inc_can: 0, inc_blo: 0, docs_emp: [], docs_rec: [], docs_liq: [], docs_pag: [], docs_can: [], docs_blo: [] };
+                        normalizedKeys.push(key);
+                    }
+                }
+
+                keys.length = 0;
+                keys.push(...normalizedKeys);
+            }
+        }
+
         const labels = [], d_emp = [], d_rec = [], d_liq = [], d_pag = [], d_can = [], d_blo = [];
         const tooltips = [[], [], [], [], [], []];
 
@@ -1499,7 +1542,7 @@ function Dashboard() {
     };
 
     const areaChartData = useMemo(() => {
-        const agg = calculateAggregatedData(areaAggLevel);
+        const agg = calculateAggregatedData(areaAggLevel, areaXAxisMode === 'normalizada');
         let cum_emp = 0, cum_rec = 0, cum_liq = 0, cum_pag = 0, cum_can = 0, cum_blo = 0;
         const d_emp_cum = [], d_rec_cum = [], d_liq_cum = [], d_pag_cum = [], d_can_cum = [], d_blo_cum = [], d_aliq_cum = [], d_apag_cum = [];
         agg.keys.forEach(k => {
@@ -1510,9 +1553,9 @@ function Dashboard() {
             d_apag_cum.push(Math.max(0, cum_emp - cum_pag - cum_blo - cum_can));
         });
         return { labels: agg.labels, d_emp: d_emp_cum, d_rec: d_rec_cum, d_liq: d_liq_cum, d_pag: d_pag_cum, d_can: d_can_cum, d_blo: d_blo_cum, d_aliq: d_aliq_cum, d_apag: d_apag_cum, tooltips: agg.tooltips };
-    }, [filteredData, areaAggLevel]);
+    }, [filteredData, areaAggLevel, areaXAxisMode]);
 
-    const barChartData = useMemo(() => calculateAggregatedData(barAggLevel), [filteredData, barAggLevel]);
+    const barChartData = useMemo(() => calculateAggregatedData(barAggLevel, barXAxisMode === 'normalizada'), [filteredData, barAggLevel, barXAxisMode]);
 
     const latestDocs = useMemo(() => {
         const getLatestList = (field) => {
@@ -2248,9 +2291,14 @@ function Dashboard() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-10">
                     <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
                         <h3 className="text-xs font-black text-slate-800 uppercase">Evolução Acumulada de Lançamentos</h3>
+                        <div className="flex items-center gap-2">
                         <select className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50 uppercase" value={areaAggLevel} onChange={(e) => setAreaAggLevel(e.target.value)}>
                             <option value="dia">Por Dia</option><option value="mes">Por Mês/Ano</option><option value="ano">Por Ano</option>
                         </select>
+                        <select className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50" value={areaXAxisMode} onChange={(e) => setAreaXAxisMode(e.target.value)}>
+                            <option value="normalizada">Escala Normalizada</option><option value="nao_normalizada">Escala Não Normalizada</option>
+                        </select>
+                        </div>
                     </div>
                     <div className="h-[450px]">
                         <ChartComponent id="chartAreaEvolucao" type="line" data={{ 
@@ -2309,9 +2357,14 @@ function Dashboard() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-10">
                     <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
                         <h3 className="text-xs font-black text-slate-800 uppercase">EVOLUÇÃO NÃO ACUMULADA DE LANÇAMENTOS</h3>
+                        <div className="flex items-center gap-2">
                         <select className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50 uppercase" value={barAggLevel} onChange={(e) => setBarAggLevel(e.target.value)}>
                             <option value="dia">Por Dia</option><option value="mes">Por Mês/Ano</option><option value="ano">Por Ano</option>
                         </select>
+                        <select className="text-[10px] font-bold border border-slate-300 rounded px-2 py-1 outline-none focus:border-blue-500 shadow-sm cursor-pointer text-slate-700 bg-slate-50" value={barXAxisMode} onChange={(e) => setBarXAxisMode(e.target.value)}>
+                            <option value="normalizada">Escala Normalizada</option><option value="nao_normalizada">Escala Não Normalizada</option>
+                        </select>
+                        </div>
                     </div>
                     <div className="h-[450px]">
                         <ChartComponent id="chartBarEvolucao" type="bubble" data={{ labels: barChartData.labels, datasets: [{ label: 'EMPENHADO', data: barChartData.d_emp.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(59, 130, 246, 0.6)', borderColor: '#3b82f6', borderWidth: 1 }, { label: 'RECEBIDO', data: barChartData.d_rec.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(139, 92, 246, 0.6)', borderColor: '#8b5cf6', borderWidth: 1 }, { label: 'LIQUIDADO', data: barChartData.d_liq.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(245, 158, 11, 0.6)', borderColor: '#f59e0b', borderWidth: 1 }, { label: 'PAGO', data: barChartData.d_pag.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(16, 185, 129, 0.6)', borderColor: '#10b981', borderWidth: 1 }, { label: 'CANCELADO', data: barChartData.d_can.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(239, 68, 68, 0.6)', borderColor: '#ef4444', borderWidth: 1 }, { label: 'BLOQUEADO', data: barChartData.d_blo.map((v, i) => ({ x: barChartData.labels[i], y: v, r: v === 0 ? 0 : Math.max(5, (v / barChartData.max_val) * 25) })), backgroundColor: 'rgba(249, 115, 22, 0.6)', borderColor: '#f97316', borderWidth: 1 }] }} options={{ responsive: true, maintainAspectRatio: false, plugins: { datalabels: { display: false }, tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 13, weight: 'bold' }, bodyFont: { size: 11 }, callbacks: { title: function(context) { return context[0].raw.x; }, label: function(context) { const val = context.raw.y !== undefined ? context.raw.y : context.raw; let lines = [context.dataset.label + ': ' + formatBRL(val)]; const docsList = barChartData.tooltips[context.datasetIndex][context.dataIndex] || []; if (docsList.length > 0) { lines.push(...docsList.slice(0, 10).map(d => '  • ' + d)); if (docsList.length > 10) lines.push(`  ... (+ ${docsList.length - 10} docs)`); } return lines; } } } }, scales: { x: { type: 'category', labels: barChartData.labels, offset: true, ticks: { font: { size: 10 }, maxRotation: 90, minRotation: 45, autoSkip: true, maxTicksLimit: 30 } }, y: { beginAtZero: true, ticks: { callback: v => shortenNumber(v) } } } }} />
