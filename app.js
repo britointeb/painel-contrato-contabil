@@ -990,7 +990,8 @@ function Dashboard() {
                     perc_tempo: percTempo,
                     encerrando_dias: diasRestantes,
                     situacaoFlags: flags,
-                    situacao: sitText.trim() || 'N/I'
+                    situacao: sitText.trim() || 'N/I',
+                    v_global: v_empenhado_g
                 };
             }
         }
@@ -1057,6 +1058,7 @@ function Dashboard() {
                     sec_log: metadadosContrato ? metadadosContrato.sec_log : 'N/I', 
                     modalidade: metadadosContrato ? metadadosContrato.modalidade : 'N/I', 
                     compra: metadadosContrato ? metadadosContrato.compra : 'N/I',
+                    v_global: metadadosContrato ? metadadosContrato.v_global : 0,
                     situacaoFlags: metadadosContrato ? metadadosContrato.situacaoFlags : [], 
                     situacao: metadadosContrato ? metadadosContrato.situacao : 'N/I',
                     existencia: metadadosContrato ? 'AMBAS' : 'CONTÁBIL',
@@ -1339,6 +1341,7 @@ function Dashboard() {
         let qtdAtivos = 0, qtdAtivosInexec = 0, qtdAtivosEmExec = 0, qtdAtivosExecTot = 0, qtdAtivosExecParc = 0;
         let qtdVencidos = 0, qtdVencInexecTot = 0, qtdVencidosTot = 0, qtdVencidosParc = 0;
         let qtdBloqueados = 0, qtdCancelados = 0;
+        let totalGlobal = 0;
 
         filteredData.forEach(item => {
             addPessoaValida(gestoresTitulares, item.gestor);
@@ -1350,7 +1353,8 @@ function Dashboard() {
                     uniqueContratos.add(item.contrato.trim());
                     if (item.situacaoFlags && item.situacaoFlags.some(f => f.label === 'CAN')) qtdCancelados++;
                     if (item.situacaoFlags && item.situacaoFlags.some(f => f.label === 'BLOQ')) qtdBloqueados++;
-                    
+                    totalGlobal += (item.v_global || 0);
+
                     if (item.situacaoFlags && item.situacaoFlags.some(f => f.label.startsWith('ATIVO'))) {
                         qtdAtivos++;
                         if (item.situacaoFlags.some(f => f.label === 'ATIVO INEXEC')) qtdAtivosInexec++;
@@ -1377,12 +1381,14 @@ function Dashboard() {
             qtdFornecedores: new Set(filteredData.map(d => d.favorecido).filter(v => v && v !== '-' && v !== 'N/I')).size,
             qtdAtivos, qtdAtivosInexec, qtdAtivosEmExec, qtdAtivosExecTot, qtdAtivosExecParc,
             qtdVencidos, qtdVencInexecTot, qtdVencidosTot, qtdVencidosParc, qtdBloqueados, qtdCancelados,
+            totalGlobal,
             totalEmpenhado: totalsMaster.emp,
             totalRecebido: totalsMaster.rec, percRecebido: totalsMaster.emp ? (totalsMaster.rec / totalsMaster.emp) : 0,
             totalLiquidado: totalsMaster.liq, percLiquidado: totalsMaster.emp ? (totalsMaster.liq / totalsMaster.emp) : 0,
             totalPago: totalsMaster.pag, percPago: totalsMaster.emp ? (totalsMaster.pag / totalsMaster.emp) : 0,
             totalCancelado: totalsMaster.can, percCancelado: totalsMaster.emp ? (totalsMaster.can / totalsMaster.emp) : 0,
-            totalBloqueado: totalsMaster.blo, percBloqueado: totalsMaster.emp ? (totalsMaster.blo / totalsMaster.emp) : 0
+            totalBloqueado: totalsMaster.blo, percBloqueado: totalsMaster.emp ? (totalsMaster.blo / totalsMaster.emp) : 0,
+            percEmpenhadoDoGlobal: totalGlobal ? (totalsMaster.emp / totalGlobal) : 0
         };
     }, [filteredData, totalsMaster]);
 
@@ -1549,6 +1555,17 @@ function Dashboard() {
                 };
             }
 
+            if (matrixGroupBy === 'empenho') {
+                return {
+                    key: empenho,
+                    sec_log: secLog,
+                    contrato: "VÁRIOS",
+                    compra: "-",
+                    modalidade: "-",
+                    empenho
+                };
+            }
+
             if (matrixGroupBy === 'sec_log') {
                 return {
                     key: secLog,
@@ -1683,8 +1700,8 @@ function Dashboard() {
     }, [filteredData]);
 
     const matrixShowsSecLog = matrixGroupBy === 'sec_log' || matrixGroupBy === 'sec_log_contrato_empenho';
-    const matrixShowsContrato = matrixGroupBy !== 'sec_log';
-    const matrixShowsEmpenho = matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
+    const matrixShowsContrato = matrixGroupBy !== 'sec_log' && matrixGroupBy !== 'empenho';
+    const matrixShowsEmpenho = matrixGroupBy === 'empenho' || matrixGroupBy === 'contrato_empenho' || matrixGroupBy === 'sec_log_contrato_empenho';
     const matrixLeadingColsCount = (matrixShowsSecLog ? 1 : 0) + (matrixShowsContrato ? 1 : 0) + (matrixShowsEmpenho ? 1 : 0);
 
     const renderMatrixHeader = (label, key, extraClass = "") => {
@@ -1878,8 +1895,9 @@ function Dashboard() {
                     <KPICard title="QTD Fornecedores" value={kpis.qtdFornecedores} color="violet" isCurrency={false} />
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
-                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} color="blue" isCurrency={true} />
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
+                    <KPICard title="Global" value={kpis.totalGlobal} color="slate" isCurrency={true} />
+                    <KPICard title="Empenhado" value={kpis.totalEmpenhado} diffText={`Dif (Glob-Emp): ${formatBRL(kpis.totalGlobal - kpis.totalEmpenhado)}`} subValue={kpis.percEmpenhadoDoGlobal} percSuffix=" do Global" color="blue" isCurrency={true} />
                     <KPICard title="Recebido" value={kpis.totalRecebido} diffText={`Dif: ${formatBRL(kpis.totalEmpenhado - kpis.totalRecebido)}`} subValue={kpis.percRecebido} percSuffix=" do Emp." color="violet" isCurrency={true} />
                     <KPICard title="Liquidado" value={kpis.totalLiquidado} diffText={`Dif: ${formatBRL(kpis.totalRecebido - kpis.totalLiquidado)}`} subValue={kpis.percLiquidado} percSuffix=" do Emp." color="amber" isCurrency={true} />
                     <KPICard title="Pago" value={kpis.totalPago} diffText={`Dif: ${formatBRL(kpis.totalLiquidado - kpis.totalPago)}`} subValue={kpis.percPago} percSuffix=" do Emp." color="emerald" isCurrency={true} />
@@ -1959,10 +1977,11 @@ function Dashboard() {
                             </h3>
                             <div className="flex gap-2 items-center">
                                 <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[9px] font-bold border border-slate-600 rounded px-2 py-1 outline-none shadow-sm text-white bg-slate-700">
-                                    <option value="contrato_empenho">Por Contrato e Empenho</option>
-                                    <option value="contrato">Apenas por Contrato</option>
-                                    <option value="sec_log">Apenas por SEC LOG</option>
-                                    <option value="sec_log_contrato_empenho">Por SEC LOG, Contrato e Empenho</option>
+                                    <option value="empenho">Por empenho</option>
+                                    <option value="contrato">Por contrato</option>
+                                    <option value="sec_log">Por Sel Log</option>
+                                    <option value="contrato_empenho">Por Contrato-Empenho</option>
+                                    <option value="sec_log_contrato_empenho">Por Sec Log-Contrato-Empenho</option>
                                 </select>
                                 <div className="relative">
                                     <button onClick={() => setShowMatrixCols(!showMatrixCols)} className="bg-slate-600 hover:bg-slate-500 text-white text-[9px] font-black px-2 py-1 rounded shadow transition">
@@ -2163,10 +2182,10 @@ function Dashboard() {
                         <ChartComponent id="gTop20100Contabil" type="bar" data={{
                             labels: top20100DataProcessed.map(d => formatLabelMultiLine(d.label)),
                             datasets: [
-                                { label: 'Liquidado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.liquidado / d.empenhado) * 100 : 0), backgroundColor: '#f59e0b', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].liquidado) } },
-                                { label: 'A Liquidar %', data: top20100DataProcessed.map(d => d.empenhado ? Math.max(0, ((d.empenhado - d.liquidado - d.bloqueado - d.cancelado) / d.empenhado) * 100) : 0), backgroundColor: '#cbd5e1', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#1e293b', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(Math.max(0, top20100DataProcessed[ctx.dataIndex].empenhado - top20100DataProcessed[ctx.dataIndex].liquidado - top20100DataProcessed[ctx.dataIndex].bloqueado - top20100DataProcessed[ctx.dataIndex].cancelado)) } },
-                                { label: 'Bloqueado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.bloqueado / d.empenhado) * 100 : 0), backgroundColor: '#f97316', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].bloqueado) } },
-                                { label: 'Cancelado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.cancelado / d.empenhado) * 100 : 0), backgroundColor: '#ef4444', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v, ctx) => shortenNumber(top20100DataProcessed[ctx.dataIndex].cancelado) } },
+                                { label: 'Liquidado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.liquidado / d.empenhado) * 100 : 0), backgroundColor: '#f59e0b', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v) => `${v.toFixed(1).replace('.', ',')}%` } },
+                                { label: 'A Liquidar %', data: top20100DataProcessed.map(d => d.empenhado ? Math.max(0, ((d.empenhado - d.liquidado - d.bloqueado - d.cancelado) / d.empenhado) * 100) : 0), backgroundColor: '#cbd5e1', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#1e293b', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v) => `${v.toFixed(1).replace('.', ',')}%` } },
+                                { label: 'Bloqueado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.bloqueado / d.empenhado) * 100 : 0), backgroundColor: '#f97316', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v) => `${v.toFixed(1).replace('.', ',')}%` } },
+                                { label: 'Cancelado %', data: top20100DataProcessed.map(d => d.empenhado ? (d.cancelado / d.empenhado) * 100 : 0), backgroundColor: '#ef4444', xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '1', order: 4, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] >= 4; }, color: '#fff', rotation: -90, align: 'center', anchor: 'center', font: { size: 9, weight: 'bold' }, formatter: (v) => `${v.toFixed(1).replace('.', ',')}%` } },
                                 
                                 { label: 'Empenhado (100%)', data: top20100DataProcessed.map(d => 100), backgroundColor: 'transparent', borderColor: '#3b82f6', borderWidth: 2, xAxisID: 'x', yAxisID: 'y', grouped: false, stack: '2', order: 3, datalabels: { display: false } },
                                 
