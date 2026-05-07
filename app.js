@@ -50,6 +50,8 @@ const RANGE_GERAL = "CONTROLE_EXEC_CONTR!A1:BR2000";
 const API_KEY = _decode("01000001 01001001 01111010 01100001 01010011 01111001 01000011 01001011 01110010 01110110 01100001 01101011 01101011 01000010 01001000 00111001 01101100 00110100 01010111 01100010 01010001 01001011 01001110 01110111 01101010 01010000 00110010 01010011 01010000 01001101 01001001 01101110 01110011 01101110 01110100 01000001 01101010 01100011 01000001");
 const API_URL_CONTABIL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_CONTABIL}/values/${RANGE_CONTABIL}?key=${API_KEY}`;
 const API_URL_GERAL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID_GERAL}/values/${RANGE_GERAL}?key=${API_KEY}`;
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwwqirbdPVTmqm9KHHYsnr0zsW9DHmnLaQfVMpJtN6xwwAWg7yNv4_Bcu_1cLlcBaqR/exec";
+
 
 const cSupItemsList = ["SGLS-CLASSE I", "SGLFE-CLASSE II", "SGLC-CLASSE III", "SGLME-CLASSE V (MUN)"];
 const getTodayStr = () => {
@@ -744,7 +746,14 @@ function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState("A processar conexão...");
     const [sortConfig, setSortConfig] = useState({ key: 'diaVal', direction: 'desc' });
-    const currentUser = localStorage.getItem('user_Contabil') || 'Usuário';
+    const currentUser = (() => {
+        try { return sessionStorage.getItem('user_PainelContabil') || localStorage.getItem('user_Contabil') || 'Usuário'; }
+        catch(e) { return 'Usuário'; }
+    })();
+    const currentPerfil = (() => {
+        try { return sessionStorage.getItem('perfil_PainelContabil') || ''; }
+        catch(e) { return ''; }
+    })();
 
     // Estado de Expansão Global
     const [globalExpandState, setGlobalExpandState] = useState(false);
@@ -888,7 +897,18 @@ function Dashboard() {
     }, [rawData]);
 
     const applyFilterUltimoDia = () => { if (maxDateInfo.iso) { setDDiaDe(maxDateInfo.iso); setDDiaAte(maxDateInfo.iso); } };
-    const logout = () => { try { localStorage.removeItem('isAuth_Contabil'); localStorage.removeItem('user_Contabil'); } catch(e){} window.location.reload(); };
+    const logout = () => {
+        try {
+            sessionStorage.removeItem('token_PainelContabil');
+            sessionStorage.removeItem('user_PainelContabil');
+            sessionStorage.removeItem('perfil_PainelContabil');
+            sessionStorage.removeItem('ativo_PainelContabil');
+            sessionStorage.removeItem('validade_PainelContabil');
+            localStorage.removeItem('isAuth_Contabil');
+            localStorage.removeItem('user_Contabil');
+        } catch(e) {}
+        window.location.reload();
+    };
 
     const processMergedData = (contabilRows, geralRows = []) => {
         if (!contabilRows || contabilRows.length < 2) { setStatus("Planilha Contábil vazia ou sem dados válidos."); setLoading(false); return; }
@@ -1685,7 +1705,7 @@ function Dashboard() {
                     <input type="file" accept=".csv" onChange={(e) => { const r = new FileReader(); r.onload = (ev) => loadData(ev.target.result); r.readAsText(e.target.files[0]); }} className="text-[9px] cursor-pointer text-blue-600 font-bold w-[160px]" />
                     <div className="w-[1px] h-6 bg-slate-300 mx-1 hidden sm:block"></div>
                     <button onClick={() => loadData()} className="text-[10px] font-black text-white bg-blue-600 px-3 py-2 rounded shadow hover:bg-blue-700 transition">SINCRONIZAR APIs</button>
-                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{currentUser}</span></span>
+                    <span className="text-[10px] font-black text-slate-500 uppercase ml-2">Logado como: <span className="text-blue-600">{String(currentUser || 'Usuário').toUpperCase()}</span>{currentPerfil && <span className="text-slate-400"> ({String(currentPerfil).toUpperCase()})</span>}</span>
                     <button onClick={logout} className="text-[10px] font-black text-white bg-red-600 px-3 py-2 rounded shadow hover:bg-red-700 transition ml-2">SAIR</button>
                 </div>
             </header>
@@ -2403,7 +2423,18 @@ class ErrorBoundary extends React.Component {
             <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-8">
                 <h2 className="text-2xl font-black text-red-600 mb-4 uppercase tracking-tighter">Erro Detetado no Painel Contábil</h2>
                 <p className="text-slate-700 mb-6 font-bold bg-white p-4 rounded shadow-sm border border-red-200">{this.state.error.toString()}</p>
-                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
+                <button onClick={() => {
+                    try {
+                        sessionStorage.removeItem('token_PainelContabil');
+                        sessionStorage.removeItem('user_PainelContabil');
+                        sessionStorage.removeItem('perfil_PainelContabil');
+                        sessionStorage.removeItem('ativo_PainelContabil');
+                        sessionStorage.removeItem('validade_PainelContabil');
+                        localStorage.removeItem('isAuth_Contabil');
+                        localStorage.removeItem('user_Contabil');
+                    } catch(e) {}
+                    window.location.reload();
+                }} className="bg-red-600 text-white px-6 py-3 rounded shadow font-bold hover:bg-red-700 uppercase text-sm tracking-widest transition">Recarregar</button>
             </div>
         );
         return this.props.children; 
@@ -2411,27 +2442,53 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(() => { try { return localStorage.getItem('isAuth_Contabil') === 'true'; } catch(e) { return false; } });
+    const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        try { return !!sessionStorage.getItem('token_PainelContabil'); }
+        catch(e) { return false; }
+    });
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [isLogging, setIsLogging] = useState(false);
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
-        const users = {};
-        users[_decode("01100010 01110010 01101001 01110100 01101111")] = _decode("00110001 00110110 00110110 00111001");
-        users[_decode("01100111 01100101 01110011 01110100 01101111 01110010")] = _decode("00110000 00110001 00110000 00110001");
-        users[_decode("01100110 01101001 01110011 01100011 01100001 01101100")] = _decode("00110000 00110010 00110000 00110010");
-        users[_decode("01100001 01101100 01101101 01100101 01110010 01101001 01100001")] = _decode("00110010 00110000 00110000 00110010");
-        users[_decode("01100010 01101111 01110101 01101100 01100101 01110111 01100001 01110010 01100100")] = _decode("00110000 00110001 00110011 00110110");
+        setError("");
+        setIsLogging(true);
 
-        const inputUser = username.toLowerCase().trim();
-        if (users[inputUser] && users[inputUser] === password) {
+        try {
+            const body = new URLSearchParams();
+            body.append("acao", "login");
+            body.append("usuario", username);
+            body.append("senha", password);
+
+            const resp = await fetch(APPS_SCRIPT_URL, { method: "POST", body });
+            let json = null;
+            try { json = await resp.json(); }
+            catch(e) { throw new Error("Resposta inválida do servidor de autenticação."); }
+
+            if (!resp.ok || !json.ok) {
+                setError(json?.mensagem || "Credenciais inválidas.");
+                setIsLogging(false);
+                return;
+            }
+
+            sessionStorage.setItem('token_PainelContabil', json.token);
+            sessionStorage.setItem('user_PainelContabil', json.usuario?.nome || username);
+            sessionStorage.setItem('perfil_PainelContabil', json.usuario?.perfil || '');
+            sessionStorage.setItem('ativo_PainelContabil', json.usuario?.ativo || '');
+            sessionStorage.setItem('validade_PainelContabil', json.usuario?.validade || '');
+            try {
+                localStorage.removeItem('isAuth_Contabil');
+                localStorage.removeItem('user_Contabil');
+            } catch(e) {}
+
             setIsAuthenticated(true);
-            try { localStorage.setItem('isAuth_Contabil', 'true'); localStorage.setItem('user_Contabil', inputUser); } catch(e) {}
-            setError("");
-        } else {
-            setError("Credenciais inválidas. Verifique o usuário e a senha.");
+            setIsLogging(false);
+        } catch (erro) {
+            console.error(erro);
+            setError(erro.message || "Falha ao tentar fazer login pelo Apps Script.");
+            setIsLogging(false);
         }
     };
 
@@ -2447,14 +2504,14 @@ function App() {
                     <form onSubmit={handleLogin} className="space-y-5">
                         <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Usuário</label>
-                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="Digite o seu usuário..." />
+                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="Digite o seu usuário..." autoComplete="username" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase mb-1">Senha</label>
-                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="••••••••" />
+                            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full border border-slate-300 px-3 py-3 rounded text-sm font-bold text-slate-700 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-slate-50 transition-all" placeholder="••••••••" autoComplete="current-password" />
                         </div>
                         {error && (<div className="bg-red-50 border-l-4 border-red-500 p-3 rounded"><p className="text-[11px] font-bold text-red-600 text-center">{error}</p></div>)}
-                        <button type="submit" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2">Autenticar Acesso</button>
+                        <button type="submit" disabled={isLogging} className={`w-full text-white font-black uppercase text-[11px] tracking-widest py-4 rounded transition-colors shadow-lg mt-2 ${isLogging ? 'bg-slate-400 cursor-wait' : 'bg-slate-800 hover:bg-slate-900'}`}>{isLogging ? 'Autenticando...' : 'Autenticar Acesso'}</button>
                     </form>
                 </div>
             </div>
