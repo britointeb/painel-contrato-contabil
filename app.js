@@ -304,7 +304,7 @@ function LatestDocCard({ title, docs, metricField, colorClass, showEmitente }) {
                         <div className="flex flex-col w-2/3 pr-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{doc.dia}</span>
-                                <span className="text-[11px] font-black text-slate-700 truncate" title={`${doc.documento} | Contrato: ${doc.contrato}`}>
+                                <span className="text-[11px] font-black text-slate-700 truncate" title={`Favorecido: ${doc.favorecido || "N/I"} | Objeto: ${doc.objeto || "-"}`}>
                                     {doc.documento} <span className="text-[9px] text-slate-400 font-bold ml-1">({doc.contrato})</span>
                                 </span>
                             </div>
@@ -1979,7 +1979,7 @@ function Dashboard() {
                                 <select value={matrixGroupBy} onChange={(e) => setMatrixGroupBy(e.target.value)} className="text-[9px] font-bold border border-slate-600 rounded px-2 py-1 outline-none shadow-sm text-white bg-slate-700">
                                     <option value="empenho">Por empenho</option>
                                     <option value="contrato">Por contrato</option>
-                                    <option value="sec_log">Por Sel Log</option>
+                                    <option value="sec_log">Por Sec Log</option>
                                     <option value="contrato_empenho">Por Contrato-Empenho</option>
                                     <option value="sec_log_contrato_empenho">Por Sec Log-Contrato-Empenho</option>
                                 </select>
@@ -2114,6 +2114,8 @@ function Dashboard() {
                                 { label: 'Recebido', data: top20DataProcessed.map(d => d.recebido), backgroundColor: '#8b5cf6', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'Liquidado', data: top20DataProcessed.map(d => d.liquidado), backgroundColor: '#f59e0b', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'Pago', data: top20DataProcessed.map(d => d.pago), backgroundColor: '#10b981', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
+                                { label: 'A Liquidar', data: top20DataProcessed.map(d => Math.max(0, d.empenhado - d.liquidado - d.bloqueado - d.cancelado)), backgroundColor: '#94a3b8', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
+                                { label: 'A Pagar', data: top20DataProcessed.map(d => Math.max(0, d.empenhado - d.pago - d.bloqueado - d.cancelado)), backgroundColor: '#475569', yAxisID: 'y', borderRadius: 4, order: 2, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#fff', rotation: -90, align: 'start', anchor: 'end', font: { size: 9, weight: 'bold' }, formatter: v => shortenNumber(v) } },
                                 { label: 'QTD Contratos', data: top20DataProcessed.map(d => d.count), backgroundColor: '#ec4899', borderColor: '#ec4899', yAxisID: 'y1', type: 'line', borderWidth: 2, pointRadius: 4, order: 1, datalabels: { display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] > 0; }, color: '#1e293b', rotation: -90, align: 'bottom', anchor: 'start', font: { size: 9, weight: 'bold' } } }
                             ]
                         }} options={{
